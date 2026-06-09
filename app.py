@@ -1,15 +1,13 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import time
 from datetime import datetime
 
 # --- הגדרות עמוד ועיצוב מוסדי ---
-st.set_page_config(page_title="Matrix OS V5.1", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
 
-# הגדרת סגנונות צבע קבועים ומניעת הבהובים מיותרים
 st.markdown("""
     <style>
     .reportview-container { background: #0e1117; }
@@ -20,13 +18,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Matrix OS - מערכת פיקוד ותזמון תוך-יומי")
-st.write(f"🔄 עדכון אוטומטי פעיל (כל 15 שניות) | זמן מערכת: {datetime.now().strftime('%H:%M:%S')}")
+st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
+st.write(f"🔄 מתעדכן חי (כל 15 שניות) | זמן מערכת: {datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
-# --- רשימות נכסים ומעקב ---
+# --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
 assets = {
-    'S&P 500 (ES)': '^GSPC', 'Nasdaq 100 (NQ)': '^NDX', 'VIX Index': '^VIX',
+    'S&P 500 (SPY)': 'SPY', 'Nasdaq 100 (QQQ)': 'QQQ', 'VIX Index': '^VIX',
     'Crude Oil': 'CL=F', 'Silver': 'SI=F', 'Platinum': 'PL=F', 
     'Wheat': 'ZW=F', 'Natural Gas': 'NG=F',
     'AST SpaceMobile': 'ASTS', 'Nano Nuclear': 'NNE', 'Iris Energy': 'IREN'
@@ -38,42 +36,58 @@ sectors = {
     'Real Estate (XLRE)': 'XLRE', 'Nuclear (URA)': 'URA', 'Quantum (QTUM)': 'QTUM'
 }
 
-# --- מנוע חישוב מגמות תוך-יומיות וגרפיקה ---
+# --- מנוע נרות יפניים תוך-יומיים וחישוב מגמות ---
 def get_asset_metrics(name, ticker):
     try:
-        # שליפת נתונים ברזולוציית דקה למגמה תוך-יומית
-        df = yf.Ticker(ticker).history(period="1d", interval="1m")
-        if df.empty or len(df) < 20:
-            df = yf.Ticker(ticker).history(period="5d", interval="5m")
+        ticker_obj = yf.Ticker(ticker)
+        
+        # שאיבת מחיר סגירה רשמי מאתמול להתאמה מושלמת מול הכלים החיצוניים
+        info = ticker_obj.fast_info
+        prev_close_daily = info.previous_close
+        current_price = info.last_price
+        
+        # גיבוי במקרה שהשוק סגור וה-fast_info ריק
+        if pd.isna(current_price) or current_price == 0:
+            df_fallback = ticker_obj.history(period="1d", interval="1m")
+            if df_fallback.empty: return None
+            current_price = df_fallback['Close'].iloc[-1]
             
-        if df.empty: return None
+        daily_change = ((current_price - prev_close_daily) / prev_close_daily) * 100
         
-        current_price = df['Close'].iloc[-1]
-        
-        # חישוב אחוז שינוי יומי מדויק לעד 2 ספרות
-        hist_daily = yf.Ticker(ticker).history(period="2d")
-        daily_change = 0.0
-        if len(hist_daily) >= 2:
-            prev_close_daily = hist_daily['Close'].iloc[-2]
-            daily_change = ((current_price - prev_close_daily) / prev_close_daily) * 100
+        # חלונות זמן לרזולוציה של דקות
+        df_1m = ticker_obj.history(period="1d", interval="1m")
+        if df_1m.empty or len(df_1m) < 20:
+            df_1m = ticker_obj.history(period="5d", interval="1m")
             
-        # מומנטום של חלונות זמן (דקה, 5 דקות, 15 דקות)
-        p_1m = df['Close'].iloc[-2] if len(df) >= 2 else current_price
-        p_5m = df['Close'].iloc[-6] if len(df) >= 6 else current_price
-        p_15m = df['Close'].iloc[-16] if len(df) >= 16 else current_price
+        p_1m = df_1m['Close'].iloc[-2] if len(df_1m) >= 2 else current_price
+        p_5m = df_1m['Close'].iloc[-6] if len(df_1m) >= 6 else current_price
+        p_15m = df_1m['Close'].iloc[-16] if len(df_1m) >= 16 else current_price
         
-        arrow_1m = "🔼" if current_price >= p_1m else "🔽"
-        arrow_5m = "🔼" if current_price >= p_5m else "🔽"
-        arrow_15m = "🔼" if current_price >= p_15m else "🔽"
+        # אלגוריתם צביעת חצים מוחלט (ירוק לעלייה, אדום לירידה)
+        def get_arrow_html(curr, past):
+            return "<span style='color: #00ff00;'>🔼</span>" if curr >= past else "<span style='color: #ff0000;'>🔽</span>"
+            
+        arrow_1m = get_arrow_html(current_price, p_1m)
+        arrow_5m = get_arrow_html(current_price, p_5m)
+        arrow_15m = get_arrow_html(current_price, p_15m)
         
-        # בניית קו מגמה גרפי נקי (Sparkline) ללא רעש ויזואלי
-        fig = px.line(df.tail(45), x=df.tail(45).index, y='Close')
+        # בניית גרף נרות יפניים מותאם אישית (15 דקות לנר) מהפתיחה
+        df_15m = ticker_obj.history(period="1d", interval="15m")
+        if df_15m.empty: df_15m = df_1m # גיבוי
+        
+        fig = go.Figure(data=[go.Candlestick(
+            x=df_15m.index,
+            open=df_15m['Open'], high=df_15m['High'],
+            low=df_15m['Low'], close=df_15m['Close'],
+            increasing_line_color='#00ff00', increasing_fillcolor='#00ff00',
+            decreasing_line_color='#ff0000', decreasing_fillcolor='#ff0000'
+        )])
+        
         fig.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0), height=35, width=110,
-            xaxis=dict(visible=False), yaxis=dict(visible=False),
+            margin=dict(l=0, r=0, t=0, b=0), height=60, width=180,
+            xaxis_rangeslider_visible=False, xaxis=dict(visible=False), yaxis=dict(visible=False),
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
         )
-        fig.update_traces(line_color='#00ff00' if current_price >= df['Close'].iloc[0] else '#ff0000', line_width=1.5)
         
         return {
             'נכס': name,
@@ -127,13 +141,13 @@ with col_m1:
 
 with col_m3:
     st.markdown("### 📢 משבשי מגמה ומבזקים")
-    st.markdown("<p class='blink'>🚨 אירוע קרוב: דוח מדד המחירים לצרכן (CPI) ישנה את משטר השוק!</p>", unsafe_allow_html=True)
-    st.info("💡 חוק היפוך מומנטום: אם השוק ירד לקראת ההודעה והנתון יצא חיובי -> חפש פריצת לונג ב-TQQQ.")
+    st.markdown("<p class='blink'>🚨 התראת מאקרו: שים לב לפרסום נתוני נפט/אינפלציה בלוח!</p>", unsafe_allow_html=True)
+    st.info("💡 שים לב: פריצה של נר 15 דק' אחרון בגרף מלווה בחצים ירוקים מעידה על כניסת מוסדיים.")
 
 st.markdown("---")
 
 # --- עורק הנתונים המרכזי ---
-st.subheader("📊 סריקה רוחבית תוך-יומית (מאקרו ומיקרו)")
+st.subheader("📊 סריקה רוחבית (מומנטום ונרות יפניים מהפתיחה)")
 
 rows_data = []
 for name, ticker in assets.items():
@@ -141,44 +155,43 @@ for name, ticker in assets.items():
     if res: rows_data.append(res)
 
 if rows_data:
-    cols = st.columns([2.5, 1.5, 1.5, 1, 1, 1, 2.5])
+    cols = st.columns([2, 1.5, 1.5, 1, 1, 1, 3])
     cols[0].markdown("**שם הנכס**")
     cols[1].markdown("**מחיר**")
     cols[2].markdown("**שינוי יומי**")
     cols[3].markdown("**1 דק'**")
     cols[4].markdown("**5 דק'**")
     cols[5].markdown("**15 דק'**")
-    cols[6].markdown("**מגמה בשעות האחרונות**")
+    cols[6].markdown("**גרף תוך-יומי (נר = 15 דק')**")
     st.markdown("<hr style='margin:4px 0px;'>", unsafe_allow_html=True)
     
     for row in rows_data:
-        c = st.columns([2.5, 1.5, 1.5, 1, 1, 1, 2.5])
+        c = st.columns([2, 1.5, 1.5, 1, 1, 1, 3])
         c[0].write(row['נכס'])
         
-        # התאמת צבעים מלאה ומניעת אפסים מיותרים
         color_class = "green-text" if row['is_positive'] else "red-text"
         
         c[1].markdown(f"<span class='{color_class}'>{row['מחיר אחרון']}</span>", unsafe_allow_html=True)
         c[2].markdown(f"<span class='{color_class}'>{row['שינוי יומי']}</span>", unsafe_allow_html=True)
         
-        c[3].markdown(f"<span class='{color_class}'>{row['מגמת 1m']}</span>", unsafe_allow_html=True)
-        c[4].markdown(f"<span class='{color_class}'>{row['מגמת 5m']}</span>", unsafe_allow_html=True)
-        c[5].markdown(f"<span class='{color_class}'>{row['מגמת 15m']}</span>", unsafe_allow_html=True)
+        c[3].markdown(row['מגמת 1m'], unsafe_allow_html=True)
+        c[4].markdown(row['מגמת 5m'], unsafe_allow_html=True)
+        c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
         c[6].plotly_chart(row['גרף'], config={'displayModeBar': False})
 
 st.markdown("---")
 
-# --- רוטציית סקטורים חסינת תקלות ---
+# --- רוטציית סקטורים ---
 st.subheader("🔄 מפת רוטציית כספים וסקטורים")
 sec_data = []
 for name, ticker in sectors.items():
     try:
-        hist = yf.Ticker(ticker).history(period="2d")
-        if len(hist) >= 2:
-            c_p = hist['Close'].iloc[-1]
-            p_p = hist['Close'].iloc[-2]
-            chg = ((c_p - p_p) / p_p) * 100
-            sec_data.append({'name': name, 'price': f"{c_p:.2f}", 'chg': f"{chg:.2f}%", 'pos': chg >= 0})
+        t_obj = yf.Ticker(ticker)
+        i = t_obj.fast_info
+        c_p = i.last_price
+        p_p = i.previous_close
+        chg = ((c_p - p_p) / p_p) * 100
+        sec_data.append({'name': name, 'price': f"{c_p:.2f}", 'chg': f"{chg:.2f}%", 'pos': chg >= 0})
     except:
         pass
 
@@ -192,14 +205,12 @@ if sec_data:
 st.markdown("---")
 
 # --- לוח אירועים כלכליים ---
-st.subheader("📅 לוח זמנים לפרסום נתונים משבשי מגמה")
+st.subheader("📅 יומן אירועי קצה")
 cal_data = [
-    {"שעה": "08:30 AM", "אירוע": "Balance of Trade (מאזן מסחרי)", "צפי": "-56.1B", "בפועל": "-55.9B", "עוצמה": "🟡 בינונית"},
-    {"שעה": "10:00 AM", "אירוע": "Existing Home Sales (מכירות בתים)", "צפי": "4.07M", "בפועל": "4.17M", "עוצמה": "🟢 חיובית"},
-    {"שעה": "04:30 PM", "אירוע": "API Crude Oil Stock Change (מלאי נפט)", "צפי": "-3.4M", "בפועל": "--", "עוצמה": "🔴 קריטית ל-CL"},
+    {"שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "צפי": "--", "בפועל": "--", "עוצמה": "🔴 קריטית לשוק"},
+    {"שעה": "04:30 PM", "אירוע": "API Crude Oil (מלאי נפט)", "צפי": "-3.4M", "בפועל": "--", "עוצמה": "🟡 בינונית"},
 ]
 st.table(pd.DataFrame(cal_data))
 
-# מנגנון שינה והרצה מחדש ברקע (15 שניות)
 time.sleep(15)
 st.rerun()
