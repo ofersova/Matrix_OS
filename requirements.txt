@@ -1,0 +1,8 @@
+yfinance
+pandas
+numpy
+requests
+pandas_datareader
+nltk
+plotly
+streamlit
