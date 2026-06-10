@@ -226,17 +226,16 @@ if sec_data:
 
 st.markdown("---")
 
-# --- לוח אירועים כלכליים ---
 # --- לוח אירועים כלכליים דינמי ---
 st.subheader("📅 יומן אירועי קצה - מאקרו בזמן אמת")
 
-# 1. ניהול תאריכים דינמי (מתעדכן אוטומטית בחצות)
-today_date = datetime.date.today()
+# 1. ניהול תאריכים דינמי (מתוקן: שימוש נכון במחלקת datetime שייבאנו)
+now_dt = datetime.now()
+today_date = now_dt.date()
 tomorrow_date = today_date + timedelta(days=1)
 after_tomorrow_date = today_date + timedelta(days=2)
 
-# 2. מאגר נתונים מרכזי (ניתן להוסיף כאן אירועים רבים קדימה)
-# המערכת תדע לבד מה להציג ומה שייך לכל יום על בסיס התאריך הנוכחי
+# 2. מאגר נתונים מרכזי
 all_events = [
     {"תאריך": today_date, "שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "תקופה": "May", "צפי": "335.11", "קודם": "333.02", "בפועל": "335.12"},
     {"תאריך": today_date, "שעה": "10:30 AM", "אירוע": "EIA Crude Oil Stocks (מלאי נפט)", "תקופה": "Jun 6", "צפי": "-4.0M", "קודם": "-7.974M", "בפועל": "-7.228M"},
@@ -247,9 +246,8 @@ all_events = [
 
 # 3. מנגנון סינון והתרעות תוך-יומיות
 filtered_events = []
-now_dt = datetime.datetime.now()
 
-# הגדרת חלון זמן שקט להתרעות חזותיות (למשל משישי בערב עד מוצ"ש) כדי למנוע הבהובים במסך בסופ"ש
+# הגדרת חלון זמן שקט להתרעות חזותיות למניעת הבהובים (משישי בערב עד מוצ"ש)
 is_quiet_hours = (now_dt.weekday() == 4 and now_dt.hour >= 18) or (now_dt.weekday() == 5 and now_dt.hour < 21)
 
 for ev in all_events:
@@ -268,13 +266,25 @@ for ev in all_events:
         ev_hour, ev_min = map(int, time_clean.split(":"))
         if "PM" in ev["שעה"] and ev_hour != 12:
             ev_hour += 12
+        elif "AM" in ev["שעה"] and ev_hour == 12:
+            ev_hour = 0
             
-        ev_datetime = datetime.datetime.combine(ev["תאריך"], datetime.time(ev_hour, ev_min))
+        # מתוקן: יצירת אובייקט זמן מדויק להשוואה מבלי לקרוא לפונקציות חסרות
+        ev_datetime = now_dt.replace(
+            year=ev["תאריך"].year, 
+            month=ev["תאריך"].month, 
+            day=ev["תאריך"].day, 
+            hour=ev_hour, 
+            minute=ev_min, 
+            second=0, 
+            microsecond=0
+        )
         time_difference = ev_datetime - now_dt
         
         # אם האירוע מתוכנן להיום, טרם עבר, ונותרו פחות מ-30 דקות אליו
-        if ev["תאריך"] == today_date and datetime.timedelta(minutes=0) <= time_difference <= datetime.timedelta(minutes=30):
-            if not is_quiet_hours:  # הפעלת ההתראה רק מחוץ לשעות המנוחה המוגדרות
+        # מתוקן: קריאה ישירה ל-timedelta
+        if ev["תאריך"] == today_date and timedelta(minutes=0) <= time_difference <= timedelta(minutes=30):
+            if not is_quiet_hours:  # הפעלת ההתראה רק מחוץ לשעות המנוחה
                 is_approaching = True
     except:
         pass
@@ -311,4 +321,6 @@ if filtered_events:
 else:
     st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
 
-# מנגנון הרענון הקיים שלך בתחתית הקובץ ישמור על הטבלה מעודכנת בכל 15 שניות
+# מנגנון רענון כל 15 שניות
+time.sleep(15)
+st.rerun()
