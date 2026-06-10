@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import time
 from datetime import datetime
+import requests
 
 # --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
@@ -103,6 +104,7 @@ def get_asset_metrics(name, ticker):
         return None
 
 # --- קומת המאקרו העליונה ---
+
 col_m1, col_m2, col_m3 = st.columns([1, 2, 1])
 
 with col_m2:
@@ -129,15 +131,35 @@ with col_m2:
                 {'range': [75, 100], 'color': "green"}]
         }
     ))
-    fig_gauge.update_layout(height=160, margin=dict(l=10, r=10, t=30, b=10))
+    # תיקון החיתוך: הגדלנו את t ל-60
+    fig_gauge.update_layout(height=180, margin=dict(l=10, r=10, t=60, b=10))
     st.plotly_chart(fig_gauge, use_container_width=True)
 
 with col_m1:
+    # נתון 1: DXY
     try:
         dxy_val = yf.Ticker('DX-Y.NYB').history(period="1d")['Close'].iloc[-1]
         st.metric("DXY Dollar Index", f"{dxy_val:.2f}", "רוח גבית לסחורות" if dxy_val < 100 else "לחץ מוכר בסחורות", delta_color="inverse")
     except:
         st.metric("DXY Dollar Index", "99.82")
+        
+    st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+    
+    # נתון 2: CNN Fear & Greed (חי)
+    import requests
+    try:
+        url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            cnn_score = int(data['fear_and_greed']['score'])
+            cnn_rating = data['fear_and_greed']['rating'].capitalize()
+            st.metric("CNN Fear & Greed", f"{cnn_score} / 100", cnn_rating, delta_color="off")
+        else:
+            st.metric("CNN Fear & Greed", "--", "שגיאת חיבור")
+    except:
+        st.metric("CNN Fear & Greed", "--", "שגיאת רשת")
 
 with col_m3:
     st.markdown("### 📢 משבשי מגמה ומבזקים")
