@@ -1,10 +1,55 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
 import requests
+import pandas_market_calendars as mcal
+
+# --- פונקציות מתמטיות של צינור הנתונים המוסדי ---
+@st.cache_data(ttl=3600) # נשמור בזיכרון מטמון כדי לא לחשב הרסט כל 15 שניות
+def calculate_hurst(series):
+    if len(series) < 30: return 0.5
+    lags = range(2, 15)
+    tau = [np.sqrt(np.std(np.subtract(series[lag:], series[:-lag]))) for lag in lags]
+    poly = np.polyfit(np.log(lags), np.log(tau), 1)
+    return poly[0] * 2.0
+
+def calculate_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_atr(data, window=14):
+    high_low = data['High'] - data['Low']
+    high_close = np.abs(data['High'] - data['Close'].shift())
+    low_close = np.abs(data['Low'] - data['Close'].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = ranges.max(axis=1)
+    atr = true_range.rolling(window=window).mean()
+    return atr
+
+def is_tom_window():
+    nyse = mcal.get_calendar('NYSE')
+    today_raw = datetime.now()
+    today = pd.Timestamp(today_raw.date())
+    start_date = today_raw - timedelta(days=15)
+    end_date = today_raw + timedelta(days=15)
+    schedule = nyse.schedule(start_date=start_date, end_date=end_date)
+    trading_days = schedule.index.tz_localize(None)
+    
+    current_month = today.month
+    current_month_days = [d for d in trading_days if d.month == current_month]
+    prev_month_days = [d for d in trading_days if d.month != current_month and d < today]
+    
+    if not prev_month_days or not current_month_days: return False
+    tom_window = [prev_month_days[-1]] + current_month_days[:4]
+    return today in tom_window
 
 # --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
@@ -19,8 +64,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+now_dt = datetime.now()
 st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
-st.write(f"🔄 מתעדכן חי (כל 15 שניות) | זמן מערכת: {datetime.now().strftime('%H:%M:%S')}")
+st.write(f"🔄 מתעדכן חי (כל 15 שניות) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
@@ -41,30 +87,23 @@ sectors = {
 def get_asset_metrics(name, ticker):
     try:
         ticker_obj = yf.Ticker(ticker)
-        
-        # שאיבת מחיר סגירה רשמי מאתמול להתאמה מושלמת מול הכלים החיצוניים
         info = ticker_obj.fast_info
         prev_close_daily = info.previous_close
         current_price = info.last_price
         
-        # גיבוי במקרה שהשוק סגור וה-fast_info ריק
         if pd.isna(current_price) or current_price == 0:
             df_fallback = ticker_obj.history(period="1d", interval="1m")
             if df_fallback.empty: return None
             current_price = df_fallback['Close'].iloc[-1]
             
         daily_change = ((current_price - prev_close_daily) / prev_close_daily) * 100
-        
-        # חלונות זמן לרזולוציה של דקות
         df_1m = ticker_obj.history(period="1d", interval="1m")
-        if df_1m.empty or len(df_1m) < 20:
-            df_1m = ticker_obj.history(period="5d", interval="1m")
+        if df_1m.empty or len(df_1m) < 20: df_1m = ticker_obj.history(period="5d", interval="1m")
             
         p_1m = df_1m['Close'].iloc[-2] if len(df_1m) >= 2 else current_price
         p_5m = df_1m['Close'].iloc[-6] if len(df_1m) >= 6 else current_price
         p_15m = df_1m['Close'].iloc[-16] if len(df_1m) >= 16 else current_price
         
-        # אלגוריתם צביעת חצים מוחלט (ירוק לעלייה, אדום לירידה)
         def get_arrow_html(curr, past):
             return "<span style='color: #00ff00;'>🔼</span>" if curr >= past else "<span style='color: #ff0000;'>🔽</span>"
             
@@ -72,23 +111,19 @@ def get_asset_metrics(name, ticker):
         arrow_5m = get_arrow_html(current_price, p_5m)
         arrow_15m = get_arrow_html(current_price, p_15m)
         
-        # בניית גרף נרות יפניים מותאם אישית (15 דקות לנר) מהפתיחה
         df_15m = ticker_obj.history(period="1d", interval="15m")
-        if df_15m.empty: df_15m = df_1m # גיבוי
+        if df_15m.empty: df_15m = df_1m 
         
         fig = go.Figure(data=[go.Candlestick(
-            x=df_15m.index,
-            open=df_15m['Open'], high=df_15m['High'],
+            x=df_15m.index, open=df_15m['Open'], high=df_15m['High'],
             low=df_15m['Low'], close=df_15m['Close'],
             increasing_line_color='#00ff00', increasing_fillcolor='#00ff00',
             decreasing_line_color='#ff0000', decreasing_fillcolor='#ff0000'
         )])
         
-        fig.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0), height=60, width=180,
+        fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=60, width=180,
             xaxis_rangeslider_visible=False, xaxis=dict(visible=False), yaxis=dict(visible=False),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-        )
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         
         return {
             'נכס': name,
@@ -104,7 +139,6 @@ def get_asset_metrics(name, ticker):
         return None
 
 # --- קומת המאקרו העליונה ---
-
 col_m1, col_m2, col_m3 = st.columns([1, 2, 1])
 
 with col_m2:
@@ -117,26 +151,16 @@ with col_m2:
         fg_score = 50
         
     fig_gauge = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = fg_score,
+        mode = "gauge+number", value = fg_score,
         title = {'text': "מדד פחד וחמדנות משוקלל (VIX סינתטי)"},
-        gauge = {
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "white"},
-            'steps': [
-                {'range': [0, 25], 'color': "darkred"},
-                {'range': [25, 45], 'color': "red"},
-                {'range': [45, 55], 'color': "gray"},
-                {'range': [55, 75], 'color': "lightgreen"},
-                {'range': [75, 100], 'color': "green"}]
-        }
+        gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "white"},
+            'steps': [{'range': [0, 25], 'color': "darkred"}, {'range': [25, 45], 'color': "red"},
+                {'range': [45, 55], 'color': "gray"}, {'range': [55, 75], 'color': "lightgreen"}, {'range': [75, 100], 'color': "green"}]}
     ))
-    # תיקון החיתוך: הגדלנו את t ל-60
     fig_gauge.update_layout(height=180, margin=dict(l=10, r=10, t=60, b=10))
     st.plotly_chart(fig_gauge, use_container_width=True)
 
 with col_m1:
-    # נתון 1: DXY
     try:
         dxy_val = yf.Ticker('DX-Y.NYB').history(period="1d")['Close'].iloc[-1]
         st.metric("DXY Dollar Index", f"{dxy_val:.2f}", "רוח גבית לסחורות" if dxy_val < 100 else "לחץ מוכר בסחורות", delta_color="inverse")
@@ -145,11 +169,9 @@ with col_m1:
         
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # נתון 2: CNN Fear & Greed (חי)
-    import requests
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         r = requests.get(url, headers=headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
@@ -170,7 +192,6 @@ st.markdown("---")
 
 # --- עורק הנתונים המרכזי ---
 st.subheader("📊 סריקה רוחבית (מומנטום ונרות יפניים מהפתיחה)")
-
 rows_data = []
 for name, ticker in assets.items():
     res = get_asset_metrics(name, ticker)
@@ -190,12 +211,9 @@ if rows_data:
     for row in rows_data:
         c = st.columns([2, 1.5, 1.5, 1, 1, 1, 3])
         c[0].write(row['נכס'])
-        
         color_class = "green-text" if row['is_positive'] else "red-text"
-        
         c[1].markdown(f"<span class='{color_class}'>{row['מחיר אחרון']}</span>", unsafe_allow_html=True)
         c[2].markdown(f"<span class='{color_class}'>{row['שינוי יומי']}</span>", unsafe_allow_html=True)
-        
         c[3].markdown(row['מגמת 1m'], unsafe_allow_html=True)
         c[4].markdown(row['מגמת 5m'], unsafe_allow_html=True)
         c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
@@ -214,8 +232,7 @@ for name, ticker in sectors.items():
         p_p = i.previous_close
         chg = ((c_p - p_p) / p_p) * 100
         sec_data.append({'name': name, 'price': f"{c_p:.2f}", 'chg': f"{chg:.2f}%", 'pos': chg >= 0})
-    except:
-        pass
+    except: pass
 
 if sec_data:
     sec_cols = st.columns(3)
@@ -228,15 +245,10 @@ st.markdown("---")
 
 # --- לוח אירועים כלכליים דינמי ---
 st.subheader("📅 יומן אירועי קצה - מאקרו בזמן אמת")
-
-# 1. ניהול תאריכים דינמי (מתוקן: שימוש נכון במחלקת datetime שייבאנו)
-now_dt = datetime.now()
 today_date = now_dt.date()
 tomorrow_date = today_date + timedelta(days=1)
 after_tomorrow_date = today_date + timedelta(days=2)
 
-# 2. מאגר נתונים מרכזי (כולל עוצמה ולוגיקת צבעים)
-# is_lower_better = True אומר שתוצאה נמוכה מהצפי היא ירוקה (כמו באינפלציה)
 all_events = [
     {"תאריך": today_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "CPI", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02", "is_lower_better": True},
     {"תאריך": today_date, "שעה": "10:30 AM", "עוצמה": "🟠", "אירוע": "EIA Crude Oil Stocks Change", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M", "is_lower_better": False},
@@ -244,179 +256,168 @@ all_events = [
     {"תאריך": tomorrow_date, "שעה": "02:30 PM", "עוצמה": "🟠", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "בפועל": "--", "צפי": "215K", "קודם": "220K", "is_lower_better": True}
 ]
 
-# 3. מנגנון סינון והתרעות תוך-יומיות
 filtered_events = []
 is_quiet_hours = (now_dt.weekday() == 4 and now_dt.hour >= 18) or (now_dt.weekday() == 5 and now_dt.hour < 21)
 
 for ev in all_events:
-    if ev["תאריך"] == today_date:
-        day_label = "Today"
-    elif ev["תאריך"] == tomorrow_date:
-        day_label = "Tomorrow"
-    else:
-        continue 
+    if ev["תאריך"] == today_date: day_label = "Today"
+    elif ev["תאריך"] == tomorrow_date: day_label = "Tomorrow"
+    else: continue 
         
     is_approaching = False
     try:
         time_clean = ev["שעה"].replace(" AM", "").replace(" PM", "")
         ev_hour, ev_min = map(int, time_clean.split(":"))
-        if "PM" in ev["שעה"] and ev_hour != 12:
-            ev_hour += 12
-        elif "AM" in ev["שעה"] and ev_hour == 12:
-            ev_hour = 0
+        if "PM" in ev["שעה"] and ev_hour != 12: ev_hour += 12
+        elif "AM" in ev["שעה"] and ev_hour == 12: ev_hour = 0
             
-        ev_datetime = now_dt.replace(
-            year=ev["תאריך"].year, month=ev["תאריך"].month, day=ev["תאריך"].day, 
-            hour=ev_hour, minute=ev_min, second=0, microsecond=0
-        )
+        ev_datetime = now_dt.replace(year=ev["תאריך"].year, month=ev["תאריך"].month, day=ev["תאריך"].day, hour=ev_hour, minute=ev_min, second=0, microsecond=0)
         time_difference = ev_datetime - now_dt
-        
         if ev["תאריך"] == today_date and timedelta(minutes=0) <= time_difference <= timedelta(minutes=30):
-            if not is_quiet_hours:  
-                is_approaching = True
-    except:
-        pass
+            if not is_quiet_hours: is_approaching = True
+    except: pass
 
-    # בניית השורה בסדר העמודות המדויק של Finviz
     filtered_events.append({
-        "Date": day_label,
-        "Time": ev["שעה"],
-        "Impact": ev["עוצמה"],
+        "Date": day_label, "Time": ev["שעה"], "Impact": ev["עוצמה"],
         "Event": f"🚨 {ev['אירוע']}" if is_approaching else ev["אירוע"],
-        "For": ev["תקופה"],
-        "Actual": ev["בפועל"],
-        "Expected": ev["צפי"],
-        "Prior": ev["קודם"],
-        "התרעה": is_approaching,
-        "is_lower_better": ev["is_lower_better"]
+        "For": ev["תקופה"], "Actual": ev["בפועל"], "Expected": ev["צפי"], "Prior": ev["קודם"],
+        "התרעה": is_approaching, "is_lower_better": ev["is_lower_better"]
     })
 
-# 4. תצוגת הטבלה ועיצוב מותנה (צביעת נתון 'בפועל')
 if filtered_events:
     df_cal = pd.DataFrame(filtered_events)
-    
     def style_table(row):
         styles = [''] * len(row)
         idx_actual = row.index.get_loc('Actual')
-        
-        # צביעת רקע אם האירוע מתקרב
-        if row['התרעה']:
-            styles = ['background-color: rgba(255, 165, 0, 0.2); border-bottom: 1px solid orange;'] * len(row)
-            
-        # צביעת הנתון בפועל (Actual)
+        if row['התרעה']: styles = ['background-color: rgba(255, 165, 0, 0.2); border-bottom: 1px solid orange;'] * len(row)
         try:
             if row['Actual'] != '--' and row['Expected'] != '--':
-                # ניקוי תווים מיוחדים כדי להפוך למספר
                 val_actual = float(str(row['Actual']).replace('%', '').replace('M', '').replace('K', '').strip())
                 val_expected = float(str(row['Expected']).replace('%', '').replace('M', '').replace('K', '').strip())
-                
                 if val_actual != val_expected:
                     is_green = (val_actual < val_expected) if row['is_lower_better'] else (val_actual > val_expected)
                     color = '#00ff00' if is_green else '#ff4b4b'
                     styles[idx_actual] = styles[idx_actual] + f'color: {color}; font-weight: bold;'
-        except:
-            pass
-            
+        except: pass
         return styles
 
-    st.dataframe(
-        df_cal.style.apply(style_table, axis=1),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "התרעה": None,
-            "is_lower_better": None
-        }
-    )
+    st.dataframe(df_cal.style.apply(style_table, axis=1), use_container_width=True, hide_index=True, column_config={"התרעה": None, "is_lower_better": None})
 else:
     st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
 
 st.markdown("---")
 
-# --- חדר בקרה מפוצל: קומת מאקרו (מדדים גלובליים) ---
+# --- מנוע החישוב האמיתי (Data Pipeline) ---
 st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
 
-# חישוב חלון קלנדרי TOM (מבוסס על צינור הנתונים של פרק 8)
-is_tom_active = True if now_dt.day >= 25 or now_dt.day <= 4 else False
+# הבאת נתוני מאקרו בזמן אמת עבור השעונים
+try:
+    hist_market = yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
+    if isinstance(hist_market.columns, pd.MultiIndex):
+        hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
+    
+    spy_closes = hist_market['Close_SPY'].dropna().values
+    vix_val = float(hist_market['Close_^VIX'].dropna().iloc[-1])
+    tnx_val = float(hist_market['Close_^TNX'].dropna().iloc[-1])
+    oil_price = float(hist_market['Close_CL=F'].dropna().iloc[-1])
+    
+    hurst_spy = calculate_hurst(spy_closes)
+    erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
+    term_structure = "Backwardation" if oil_price > 80 else "Contango"
+except:
+    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
+    term_structure = "ניטרלי"
+
+is_tom_active = is_tom_window()
 tom_color = "normal" if is_tom_active else "off"
 
 col_mac1, col_mac2, col_mac3, col_mac4 = st.columns(4)
-col_mac1.metric("📉 משטר שוק (Hurst)", "0.62", "מגמתי שורי (H > 0.5)", delta_color="normal")
-col_mac2.metric("🛢️ עקום הנפט (WTI)", "82.40$", "Backwardation (הגנת לונג)", delta_color="normal")
-col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", "0.18", "שוק רגוע (Risk-On)", delta_color="inverse")
+col_mac1.metric("📉 משטר שוק (Hurst)", f"{hurst_spy:.2f}", "מגמתי שורי (H > 0.5)" if hurst_spy > 0.5 else "שוק דשדוש", delta_color="normal" if hurst_spy > 0.5 else "inverse")
+col_mac2.metric("🛢️ עקום הנפט (WTI)", f"{oil_price:.2f}$", f"{term_structure} (הגנת לונג)", delta_color="normal" if "Backwardation" in term_structure else "inverse")
+col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", f"{erp_stress:.2f}", "שוק רגוע (Risk-On)" if erp_stress < 0.25 else "שוק בסיכון", delta_color="inverse")
 col_mac4.metric("📅 סטטוס קלנדרי (TOM)", "פעיל" if is_tom_active else "שגרה", "לחץ קניות מוסדי" if is_tom_active else "", delta_color=tom_color)
 
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
-
-# --- קומת מיקרו: מטריצת מפל דינמית עם Lead-Lag ---
 st.subheader("🎯 טבלת צלפים: סנכרון רב-ממדי (Lead-Lag Matrix)")
 
-# בניית הדאטה המרכזי לטבלה המשלב את כל האלמנטים
-matrix_table_data = [
-    {
-        "סקטור (בסיס)": "טכנולוגיה (QQQ)",
-        "הדק (ביצוע)": "TQQQ (לונג 3x)",
-        "קפיץ מתוח": "🟢 +45 (מתוח ללונג)",
-        "סנטימנט מאקרו": "🟩 Hurst שורי",
-        "זמן ועונתיות": "🟩 TOM פעיל",
-        "אינדיקטור מקדים (Lead)": "🎯🎯🎯 (VIX קורס, ריבית יורדת)",
-        "score": 45
-    },
-    {
-        "סקטור (בסיס)": "אנרגיה (XLE)",
-        "הדק (ביצוע)": "ERX (לונג 2x)",
-        "קפיץ מתוח": "⚪ +12 (ניטרלי)",
-        "סנטימנט מאקרו": "🟩 Backwardation",
-        "זמן ועונתיות": "⬜ שגרה",
-        "אינדיקטור מקדים (Lead)": "🎯 (התעוררות נפט)",
-        "score": 12
-    },
-    {
-        "סקטור (בסיס)": "בנקים (XLF)",
-        "הדק (ביצוע)": "--",
-        "קפיץ מתוח": "⚪ -5 (ניטרלי)",
-        "סנטימנט מאקרו": "⬜ דשדוש ריביות",
-        "זמן ועונתיות": "⬜ שגרה",
-        "אינדיקטור מקדים (Lead)": "--",
-        "score": -5
-    },
-    {
-        "סקטור (בסיס)": "נדל\"ן (XLRE)",
-        "הדק (ביצוע)": "DRV (שורט 3x)",
-        "קפיץ מתוח": "🔴 -38 (מתוח לשורט)",
-        "סנטימנט מאקרו": "🟥 תשואות עולות",
-        "זמן ועונתיות": "🟥 מחוץ לעונה",
-        "אינדיקטור מקדים (Lead)": "🎯🎯🎯 (זינוק TNX, קריסת נזילות)",
-        "score": -38
-    }
-]
+# בניית המטריצה החיה מתוך הנתונים של פרק 8
+matrix_sectors = {
+    'QQQ': {'name': 'טכנולוגיה ונאסד"ק', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'SOXX': {'name': 'שבבים (SOXX)', 'long_3x': 'SOXL', 'short_3x': 'SOXS', 'base_weight': -15 if erp_stress > 0.25 else 0},
+    'XLF': {'name': 'פיננסים (XLF)', 'long_3x': 'FAS', 'short_3x': 'FAZ', 'base_weight': 10 if tnx_val > 4.2 else 0},
+    'IWM': {'name': 'ראסל 2000 (IWM)', 'long_3x': 'TNA', 'short_3x': 'TZA', 'base_weight': -15 if tnx_val > 4.2 else 0},
+    'XLE': {'name': 'אנרגיה (XLE)', 'long_3x': 'ERX', 'short_3x': 'ERY', 'base_weight': 15 if "Backwardation" in term_structure else 0},
+    'XLRE': {'name': 'נדל"ן (XLRE)', 'long_3x': 'DRN', 'short_3x': 'DRV', 'base_weight': -20 if tnx_val > 4.2 else 0},
+    'XBI': {'name': 'ביוטק (XBI)', 'long_3x': 'LABU', 'short_3x': 'LABD', 'base_weight': 0}
+}
 
-df_matrix = pd.DataFrame(matrix_table_data)
+matrix_table_data = []
 
-# מיון דינמי: הסקטורים המעניינים ביותר (לונג חזק או שורט חזק) קופצים למעלה
-df_matrix['abs_score'] = df_matrix['score'].abs()
-df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
-
-# סידור העמודות מימין לשמאל
-df_matrix = df_matrix[['אינדיקטור מקדים (Lead)', 'סקטור (בסיס)', 'זמן ועונתיות', 'סנטימנט מאקרו', 'קפיץ מתוח', 'הדק (ביצוע)']]
-
-# פונקציית עיצוב חכמה לשורות הטבלה
-def style_matrix(row):
-    styles = [''] * len(row)
-    
-    # צביעת עמודת "הדק" ו"האינדיקטור המקדים" בהתאם לכמות החצים
-    if "🎯🎯🎯" in str(row['אינדיקטור מקדים (Lead)']):
-        if "לונג" in str(row['קפיץ מתוח']):
-            return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
-        elif "שורט" in str(row['קפיץ מתוח']):
-            return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+for ticker, info in matrix_sectors.items():
+    try:
+        df_sector = yf.download(ticker, period='5d', interval='15m', auto_adjust=True, progress=False)
+        if not df_sector.empty:
+            if isinstance(df_sector.columns, pd.MultiIndex):
+                df_sector.columns = [col[0] for col in df_sector.columns]
+                
+            df_sector['RSI'] = calculate_rsi(df_sector)
+            last_row = df_sector.iloc[-1]
+            rsi = float(last_row['RSI'])
             
-    return styles
+            # חישוב הניקוד בדיוק כפי שהוגדר בצינור הנתונים
+            rsi_stretch_weight = 50.0 - rsi
+            calendar_weight = 25 if is_tom_active else 0
+            confluence_score = info['base_weight'] + rsi_stretch_weight + calendar_weight
+            if hurst_spy < 0.5: confluence_score *= 1.5 
+            
+            # קביעת טקסט הסטטוס וההדק
+            if confluence_score > 25:
+                status_text = f"🟢 +{confluence_score:.1f} (מתוח ללונג)"
+                trigger_text = f"{info['long_3x']} (לונג 3x)"
+                lead_text = "🎯🎯🎯 (מומנטום מוסדי מלא)"
+            elif confluence_score < -25:
+                status_text = f"🔴 {confluence_score:.1f} (מתוח לשורט)"
+                trigger_text = f"{info['short_3x']} (שורט 3x)"
+                lead_text = "🎯🎯🎯 (בריחת נזילות, התנגדות)"
+            elif confluence_score > 10:
+                status_text = f"⚪ +{confluence_score:.1f} (התעוררות חיובית)"
+                trigger_text = "--"
+                lead_text = "🎯 (איסוף סחורה ראשוני)"
+            elif confluence_score < -10:
+                status_text = f"⚪ {confluence_score:.1f} (חולשה יחסית)"
+                trigger_text = "--"
+                lead_text = "🎯 (פיזור סחורה ראשוני)"
+            else:
+                status_text = f"⚪ {confluence_score:.1f} (ניטרלי)"
+                trigger_text = "--"
+                lead_text = "--"
 
-st.dataframe(
-    df_matrix.style.apply(style_matrix, axis=1),
-    use_container_width=True,
-    hide_index=True
-)
+            matrix_table_data.append({
+                "סקטור (בסיס)": info['name'],
+                "הדק (ביצוע)": trigger_text,
+                "קפיץ מתוח": status_text,
+                "סנטימנט מאקרו": "🟩 Hurst שורי" if hurst_spy > 0.5 else "⬜ דשדוש",
+                "זמן ועונתיות": "🟩 TOM פעיל" if is_tom_active else "⬜ שגרה",
+                "אינדיקטור מקדים (Lead)": lead_text,
+                "score": confluence_score
+            })
+    except:
+        pass
+
+if matrix_table_data:
+    df_matrix = pd.DataFrame(matrix_table_data)
+    df_matrix['abs_score'] = df_matrix['score'].abs()
+    df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
+    df_matrix = df_matrix[['אינדיקטור מקדים (Lead)', 'סקטור (בסיס)', 'זמן ועונתיות', 'סנטימנט מאקרו', 'קפיץ מתוח', 'הדק (ביצוע)']]
+
+    def style_matrix(row):
+        styles = [''] * len(row)
+        if "🎯🎯🎯" in str(row['אינדיקטור מקדים (Lead)']):
+            if "לונג" in str(row['קפיץ מתוח']): return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+            elif "שורט" in str(row['קפיץ מתוח']): return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+        return styles
+
+    st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+
 time.sleep(15)
 st.rerun()
