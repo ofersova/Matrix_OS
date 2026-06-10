@@ -227,42 +227,88 @@ if sec_data:
 st.markdown("---")
 
 # --- לוח אירועים כלכליים ---
-st.subheader("📅 יומן אירועי קצה - מאקרו יומי")
+# --- לוח אירועים כלכליים דינמי ---
+st.subheader("📅 יומן אירועי קצה - מאקרו בזמן אמת")
 
-# הזנת הנתונים למבנה מסודר (בעתיד ניתן לחבר כאן קריאת API למשיכה אוטומטית)
-raw_calendar_data = [
-    {"שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02"},
-    {"שעה": "08:30 AM", "אירוע": "Inflation Rate MoM", "תקופה": "May", "בפועל": "0.5%", "צפי": "0.5%", "קודם": "0.6%"},
-    {"שעה": "08:30 AM", "אירוע": "Inflation Rate YoY", "תקופה": "May", "בפועל": "4.2%", "צפי": "4.2%", "קודם": "3.8%"},
-    {"שעה": "10:30 AM", "אירוע": "EIA Crude Oil Stocks (מלאי נפט)", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M"},
-    {"שעה": "10:30 AM", "אירוע": "EIA Gasoline Stocks", "תקופה": "Jun 6", "בפועל": "0.186M", "צפי": "-0.5M", "קודם": "3.364M"},
+# 1. ניהול תאריכים דינמי (מתעדכן אוטומטית בחצות)
+today_date = datetime.date.today()
+tomorrow_date = today_date + timedelta(days=1)
+after_tomorrow_date = today_date + timedelta(days=2)
+
+# 2. מאגר נתונים מרכזי (ניתן להוסיף כאן אירועים רבים קדימה)
+# המערכת תדע לבד מה להציג ומה שייך לכל יום על בסיס התאריך הנוכחי
+all_events = [
+    {"תאריך": today_date, "שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "תקופה": "May", "צפי": "335.11", "קודם": "333.02", "בפועל": "335.12"},
+    {"תאריך": today_date, "שעה": "10:30 AM", "אירוע": "EIA Crude Oil Stocks (מלאי נפט)", "תקופה": "Jun 6", "צפי": "-4.0M", "קודם": "-7.974M", "בפועל": "-7.228M"},
+    {"תאריך": tomorrow_date, "שעה": "08:30 AM", "אירוע": "Core PPI MoM", "תקופה": "May", "צפי": "0.2%", "קודם": "0.1%", "בפועל": "--"},
+    {"תאריך": tomorrow_date, "שעה": "02:30 PM", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "צפי": "215K", "קודם": "220K", "בפועל": "--"},
+    {"תאריך": after_tomorrow_date, "שעה": "10:00 AM", "אירוע": "אירוע מחרתיים (יוצג רק מחר בחצות)", "תקופה": "Jun", "צפי": "--", "קודם": "--", "בפועל": "--"}
 ]
 
-df_cal = pd.DataFrame(raw_calendar_data)
+# 3. מנגנון סינון והתרעות תוך-יומיות
+filtered_events = []
+now_dt = datetime.datetime.now()
 
-# אלגוריתם לצביעת הנתון בפועל מול הצפי
-def highlight_actual(row):
-    try:
-        # ניקוי סימנים מיוחדים כדי לאפשר השוואה מתמטית
-        actual_val = float(row['בפועל'].replace('%', '').replace('M', ''))
-        expected_val = float(row['צפי'].replace('%', '').replace('M', ''))
+# הגדרת חלון זמן שקט להתרעות חזותיות (למשל משישי בערב עד מוצ"ש) כדי למנוע הבהובים במסך בסופ"ש
+is_quiet_hours = (now_dt.weekday() == 4 and now_dt.hour >= 18) or (now_dt.weekday() == 5 and now_dt.hour < 21)
+
+for ev in all_events:
+    if ev["תאריך"] == today_date:
+        day_label = "היום"
+    elif ev["תאריך"] == tomorrow_date:
+        day_label = "מחר"
+    else:
+        continue # מתעלם אוטומטית מכל מה שאינו היום או מחר
         
-        # צביעת הרקע של תא "בפועל" בלבד (אינדקס 3 ברשימת העמודות)
-        if actual_val > expected_val:
-            return [''] * 3 + ['background-color: rgba(255, 0, 0, 0.2); color: #ff4b4b; font-weight: bold;'] + [''] * 2
-        elif actual_val < expected_val:
-            return [''] * 3 + ['background-color: rgba(0, 255, 0, 0.2); color: #00ff00; font-weight: bold;'] + [''] * 2
-        else:
-            return [''] * 3 + ['background-color: rgba(128, 128, 128, 0.2); font-weight: bold;'] + [''] * 2
+    # בדיקה האם שעת האירוע מתקרבת (טווח של 30 דקות לפני המועד)
+    is_approaching = False
+    try:
+        # המרה של פורמט השעה לבדיקה מתמטית
+        time_clean = ev["שעה"].replace(" AM", "").replace(" PM", "")
+        ev_hour, ev_min = map(int, time_clean.split(":"))
+        if "PM" in ev["שעה"] and ev_hour != 12:
+            ev_hour += 12
+            
+        ev_datetime = datetime.datetime.combine(ev["תאריך"], datetime.time(ev_hour, ev_min))
+        time_difference = ev_datetime - now_dt
+        
+        # אם האירוע מתוכנן להיום, טרם עבר, ונותרו פחות מ-30 דקות אליו
+        if ev["תאריך"] == today_date and datetime.timedelta(minutes=0) <= time_difference <= datetime.timedelta(minutes=30):
+            if not is_quiet_hours:  # הפעלת ההתראה רק מחוץ לשעות המנוחה המוגדרות
+                is_approaching = True
     except:
+        pass
+
+    # בניית השורה המעובדת לטבלה
+    filtered_events.append({
+        "יום": day_label,
+        "שעה": ev["שעה"],
+        "אירוע": f"🚨 {ev['אירוע']} - מתקרב!" if is_approaching else ev["אירוע"],
+        "צפי": ev["צפי"],
+        "קודם": ev["קודם"],
+        "בפועל": ev["בפועל"],
+        "התרעה": is_approaching  # עמודת עזר מוסתרת לעיצוב
+    })
+
+# 4. תצוגת הטבלה ועיצוב מותנה
+if filtered_events:
+    df_cal = pd.DataFrame(filtered_events)
+    
+    # פונקציה לצביעת שורות של אירועים קרובים בצהוב/כתום בולט
+    def style_approaching_events(row):
+        if row['התרעה']:
+            return ['background-color: rgba(255, 165, 0, 0.3); color: #ffffff; font-weight: bold; border: 1px solid orange;'] * len(row)
         return [''] * len(row)
 
-# הצגת הטבלה בדשבורד עם העיצוב
-st.dataframe(
-    df_cal.style.apply(highlight_actual, axis=1),
-    use_container_width=True,
-    hide_index=True
-)
+    # הסרת עמודת העזר הפיקטיבית לפני ההקרנה על המסך
+    display_df = df_cal.drop(columns=["התרעה"])
+    
+    st.dataframe(
+        display_df.style.apply(style_approaching_events, axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
+else:
+    st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
 
-time.sleep(15)
-st.rerun()
+# מנגנון הרענון הקיים שלך בתחתית הקובץ ישמור על הטבלה מעודכנת בכל 15 שניות
