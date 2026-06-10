@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 
 # --- הגדרות עמוד ועיצוב מוסדי ---
