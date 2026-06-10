@@ -310,33 +310,18 @@ if filtered_events:
             return ['background-color: rgba(255, 165, 0, 0.3); color: #ffffff; font-weight: bold; border: 1px solid orange;'] * len(row)
         return [''] * len(row)
 
-    # מריצים את העיצוב על הטבלה המלאה (כולל עמודת ההתרעה), 
-    # ומסתירים את עמודת העזר דרך ההגדרות החזותיות של Streamlit
+    # מריצים את העיצוב על הטבלה המלאה, ומסתירים את עמודת העזר דרך ההגדרות של Streamlit
     st.dataframe(
         df_cal.style.apply(style_approaching_events, axis=1),
         use_container_width=True,
         hide_index=True,
         column_config={
-            "התרעה": None  # פקודה זו מסתירה את העמודה מהתצוגה מבלי למחוק אותה מהזיכרון
+            "התרעה": None  
         }
     )
 else:
     st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
 
 # מנגנון הרענון הקיים שלך בתחתית הקובץ ישמור על הטבלה מעודכנת בכל 15 שניות
-time.sleep(15)
-st.rerun()
-    # הסרת עמודת העזר הפיקטיבית לפני ההקרנה על המסך
-    display_df = df_cal.drop(columns=["התרעה"])
-    
-    st.dataframe(
-        display_df.style.apply(style_approaching_events, axis=1),
-        use_container_width=True,
-        hide_index=True
-    )
-else:
-    st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
-
-# מנגנון רענון כל 15 שניות
 time.sleep(15)
 st.rerun()
