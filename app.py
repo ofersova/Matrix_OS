@@ -235,33 +235,29 @@ today_date = now_dt.date()
 tomorrow_date = today_date + timedelta(days=1)
 after_tomorrow_date = today_date + timedelta(days=2)
 
-# 2. מאגר נתונים מרכזי
+# 2. מאגר נתונים מרכזי (כולל עוצמה ולוגיקת צבעים)
+# is_lower_better = True אומר שתוצאה נמוכה מהצפי היא ירוקה (כמו באינפלציה)
 all_events = [
-    {"תאריך": today_date, "שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "תקופה": "May", "צפי": "335.11", "קודם": "333.02", "בפועל": "335.12"},
-    {"תאריך": today_date, "שעה": "10:30 AM", "אירוע": "EIA Crude Oil Stocks (מלאי נפט)", "תקופה": "Jun 6", "צפי": "-4.0M", "קודם": "-7.974M", "בפועל": "-7.228M"},
-    {"תאריך": tomorrow_date, "שעה": "08:30 AM", "אירוע": "Core PPI MoM", "תקופה": "May", "צפי": "0.2%", "קודם": "0.1%", "בפועל": "--"},
-    {"תאריך": tomorrow_date, "שעה": "02:30 PM", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "צפי": "215K", "קודם": "220K", "בפועל": "--"},
-    {"תאריך": after_tomorrow_date, "שעה": "10:00 AM", "אירוע": "אירוע מחרתיים (יוצג רק מחר בחצות)", "תקופה": "Jun", "צפי": "--", "קודם": "--", "בפועל": "--"}
+    {"תאריך": today_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "CPI", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02", "is_lower_better": True},
+    {"תאריך": today_date, "שעה": "10:30 AM", "עוצמה": "🟠", "אירוע": "EIA Crude Oil Stocks Change", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M", "is_lower_better": False},
+    {"תאריך": tomorrow_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "Core PPI MoM", "תקופה": "May", "בפועל": "--", "צפי": "0.2%", "קודם": "0.1%", "is_lower_better": True},
+    {"תאריך": tomorrow_date, "שעה": "02:30 PM", "עוצמה": "🟠", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "בפועל": "--", "צפי": "215K", "קודם": "220K", "is_lower_better": True}
 ]
 
 # 3. מנגנון סינון והתרעות תוך-יומיות
 filtered_events = []
-
-# הגדרת חלון זמן שקט להתרעות חזותיות למניעת הבהובים (משישי בערב עד מוצ"ש)
 is_quiet_hours = (now_dt.weekday() == 4 and now_dt.hour >= 18) or (now_dt.weekday() == 5 and now_dt.hour < 21)
 
 for ev in all_events:
     if ev["תאריך"] == today_date:
-        day_label = "היום"
+        day_label = "Today"
     elif ev["תאריך"] == tomorrow_date:
-        day_label = "מחר"
+        day_label = "Tomorrow"
     else:
-        continue # מתעלם אוטומטית מכל מה שאינו היום או מחר
+        continue 
         
-    # בדיקה האם שעת האירוע מתקרבת (טווח של 30 דקות לפני המועד)
     is_approaching = False
     try:
-        # המרה של פורמט השעה לבדיקה מתמטית
         time_clean = ev["שעה"].replace(" AM", "").replace(" PM", "")
         ev_hour, ev_min = map(int, time_clean.split(":"))
         if "PM" in ev["שעה"] and ev_hour != 12:
@@ -269,59 +265,71 @@ for ev in all_events:
         elif "AM" in ev["שעה"] and ev_hour == 12:
             ev_hour = 0
             
-        # מתוקן: יצירת אובייקט זמן מדויק להשוואה מבלי לקרוא לפונקציות חסרות
         ev_datetime = now_dt.replace(
-            year=ev["תאריך"].year, 
-            month=ev["תאריך"].month, 
-            day=ev["תאריך"].day, 
-            hour=ev_hour, 
-            minute=ev_min, 
-            second=0, 
-            microsecond=0
+            year=ev["תאריך"].year, month=ev["תאריך"].month, day=ev["תאריך"].day, 
+            hour=ev_hour, minute=ev_min, second=0, microsecond=0
         )
         time_difference = ev_datetime - now_dt
         
-        # אם האירוע מתוכנן להיום, טרם עבר, ונותרו פחות מ-30 דקות אליו
-        # מתוקן: קריאה ישירה ל-timedelta
         if ev["תאריך"] == today_date and timedelta(minutes=0) <= time_difference <= timedelta(minutes=30):
-            if not is_quiet_hours:  # הפעלת ההתראה רק מחוץ לשעות המנוחה
+            if not is_quiet_hours:  
                 is_approaching = True
     except:
         pass
 
-    # בניית השורה המעובדת לטבלה
+    # בניית השורה בסדר העמודות המדויק של Finviz
     filtered_events.append({
-        "יום": day_label,
-        "שעה": ev["שעה"],
-        "אירוע": f"🚨 {ev['אירוע']} - מתקרב!" if is_approaching else ev["אירוע"],
-        "צפי": ev["צפי"],
-        "קודם": ev["קודם"],
-        "בפועל": ev["בפועל"],
-        "התרעה": is_approaching  # עמודת עזר מוסתרת לעיצוב
+        "Date": day_label,
+        "Time": ev["שעה"],
+        "Impact": ev["עוצמה"],
+        "Event": f"🚨 {ev['אירוע']}" if is_approaching else ev["אירוע"],
+        "For": ev["תקופה"],
+        "Actual": ev["בפועל"],
+        "Expected": ev["צפי"],
+        "Prior": ev["קודם"],
+        "התרעה": is_approaching,
+        "is_lower_better": ev["is_lower_better"]
     })
 
-# 4. תצוגת הטבלה ועיצוב מותנה
+# 4. תצוגת הטבלה ועיצוב מותנה (צביעת נתון 'בפועל')
 if filtered_events:
     df_cal = pd.DataFrame(filtered_events)
     
-    # פונקציה לצביעת שורות של אירועים קרובים בצהוב/כתום בולט
-    def style_approaching_events(row):
+    def style_table(row):
+        styles = [''] * len(row)
+        idx_actual = row.index.get_loc('Actual')
+        
+        # צביעת רקע אם האירוע מתקרב
         if row['התרעה']:
-            return ['background-color: rgba(255, 165, 0, 0.3); color: #ffffff; font-weight: bold; border: 1px solid orange;'] * len(row)
-        return [''] * len(row)
+            styles = ['background-color: rgba(255, 165, 0, 0.2); border-bottom: 1px solid orange;'] * len(row)
+            
+        # צביעת הנתון בפועל (Actual)
+        try:
+            if row['Actual'] != '--' and row['Expected'] != '--':
+                # ניקוי תווים מיוחדים כדי להפוך למספר
+                val_actual = float(str(row['Actual']).replace('%', '').replace('M', '').replace('K', '').strip())
+                val_expected = float(str(row['Expected']).replace('%', '').replace('M', '').replace('K', '').strip())
+                
+                if val_actual != val_expected:
+                    is_green = (val_actual < val_expected) if row['is_lower_better'] else (val_actual > val_expected)
+                    color = '#00ff00' if is_green else '#ff4b4b'
+                    styles[idx_actual] = styles[idx_actual] + f'color: {color}; font-weight: bold;'
+        except:
+            pass
+            
+        return styles
 
-    # מריצים את העיצוב על הטבלה המלאה, ומסתירים את עמודת העזר דרך ההגדרות של Streamlit
     st.dataframe(
-        df_cal.style.apply(style_approaching_events, axis=1),
+        df_cal.style.apply(style_table, axis=1),
         use_container_width=True,
         hide_index=True,
         column_config={
-            "התרעה": None  
+            "התרעה": None,
+            "is_lower_better": None
         }
     )
 else:
     st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
 
-# מנגנון הרענון הקיים שלך בתחתית הקובץ ישמור על הטבלה מעודכנת בכל 15 שניות
 time.sleep(15)
 st.rerun()
