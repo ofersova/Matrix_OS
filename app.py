@@ -331,5 +331,92 @@ if filtered_events:
 else:
     st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
 
+st.markdown("---")
+
+# --- חדר בקרה מפוצל: קומת מאקרו (מדדים גלובליים) ---
+st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
+
+# חישוב חלון קלנדרי TOM (מבוסס על צינור הנתונים של פרק 8)
+is_tom_active = True if now_dt.day >= 25 or now_dt.day <= 4 else False
+tom_color = "normal" if is_tom_active else "off"
+
+col_mac1, col_mac2, col_mac3, col_mac4 = st.columns(4)
+col_mac1.metric("📉 משטר שוק (Hurst)", "0.62", "מגמתי שורי (H > 0.5)", delta_color="normal")
+col_mac2.metric("🛢️ עקום הנפט (WTI)", "82.40$", "Backwardation (הגנת לונג)", delta_color="normal")
+col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", "0.18", "שוק רגוע (Risk-On)", delta_color="inverse")
+col_mac4.metric("📅 סטטוס קלנדרי (TOM)", "פעיל" if is_tom_active else "שגרה", "לחץ קניות מוסדי" if is_tom_active else "", delta_color=tom_color)
+
+st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
+
+# --- קומת מיקרו: מטריצת מפל דינמית עם Lead-Lag ---
+st.subheader("🎯 טבלת צלפים: סנכרון רב-ממדי (Lead-Lag Matrix)")
+
+# בניית הדאטה המרכזי לטבלה המשלב את כל האלמנטים
+matrix_table_data = [
+    {
+        "סקטור (בסיס)": "טכנולוגיה (QQQ)",
+        "הדק (ביצוע)": "TQQQ (לונג 3x)",
+        "קפיץ מתוח": "🟢 +45 (מתוח ללונג)",
+        "סנטימנט מאקרו": "🟩 Hurst שורי",
+        "זמן ועונתיות": "🟩 TOM פעיל",
+        "אינדיקטור מקדים (Lead)": "🎯🎯🎯 (VIX קורס, ריבית יורדת)",
+        "score": 45
+    },
+    {
+        "סקטור (בסיס)": "אנרגיה (XLE)",
+        "הדק (ביצוע)": "ERX (לונג 2x)",
+        "קפיץ מתוח": "⚪ +12 (ניטרלי)",
+        "סנטימנט מאקרו": "🟩 Backwardation",
+        "זמן ועונתיות": "⬜ שגרה",
+        "אינדיקטור מקדים (Lead)": "🎯 (התעוררות נפט)",
+        "score": 12
+    },
+    {
+        "סקטור (בסיס)": "בנקים (XLF)",
+        "הדק (ביצוע)": "--",
+        "קפיץ מתוח": "⚪ -5 (ניטרלי)",
+        "סנטימנט מאקרו": "⬜ דשדוש ריביות",
+        "זמן ועונתיות": "⬜ שגרה",
+        "אינדיקטור מקדים (Lead)": "--",
+        "score": -5
+    },
+    {
+        "סקטור (בסיס)": "נדל\"ן (XLRE)",
+        "הדק (ביצוע)": "DRV (שורט 3x)",
+        "קפיץ מתוח": "🔴 -38 (מתוח לשורט)",
+        "סנטימנט מאקרו": "🟥 תשואות עולות",
+        "זמן ועונתיות": "🟥 מחוץ לעונה",
+        "אינדיקטור מקדים (Lead)": "🎯🎯🎯 (זינוק TNX, קריסת נזילות)",
+        "score": -38
+    }
+]
+
+df_matrix = pd.DataFrame(matrix_table_data)
+
+# מיון דינמי: הסקטורים המעניינים ביותר (לונג חזק או שורט חזק) קופצים למעלה
+df_matrix['abs_score'] = df_matrix['score'].abs()
+df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
+
+# סידור העמודות מימין לשמאל
+df_matrix = df_matrix[['אינדיקטור מקדים (Lead)', 'סקטור (בסיס)', 'זמן ועונתיות', 'סנטימנט מאקרו', 'קפיץ מתוח', 'הדק (ביצוע)']]
+
+# פונקציית עיצוב חכמה לשורות הטבלה
+def style_matrix(row):
+    styles = [''] * len(row)
+    
+    # צביעת עמודת "הדק" ו"האינדיקטור המקדים" בהתאם לכמות החצים
+    if "🎯🎯🎯" in str(row['אינדיקטור מקדים (Lead)']):
+        if "לונג" in str(row['קפיץ מתוח']):
+            return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+        elif "שורט" in str(row['קפיץ מתוח']):
+            return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+            
+    return styles
+
+st.dataframe(
+    df_matrix.style.apply(style_matrix, axis=1),
+    use_container_width=True,
+    hide_index=True
+)
 time.sleep(15)
 st.rerun()
