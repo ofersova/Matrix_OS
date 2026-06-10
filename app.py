@@ -205,12 +205,42 @@ if sec_data:
 st.markdown("---")
 
 # --- לוח אירועים כלכליים ---
-st.subheader("📅 יומן אירועי קצה")
-cal_data = [
-    {"שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "צפי": "--", "בפועל": "--", "עוצמה": "🔴 קריטית לשוק"},
-    {"שעה": "04:30 PM", "אירוע": "API Crude Oil (מלאי נפט)", "צפי": "-3.4M", "בפועל": "--", "עוצמה": "🟡 בינונית"},
+st.subheader("📅 יומן אירועי קצה - מאקרו יומי")
+
+# הזנת הנתונים למבנה מסודר (בעתיד ניתן לחבר כאן קריאת API למשיכה אוטומטית)
+raw_calendar_data = [
+    {"שעה": "08:30 AM", "אירוע": "CPI (מדד המחירים לצרכן)", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02"},
+    {"שעה": "08:30 AM", "אירוע": "Inflation Rate MoM", "תקופה": "May", "בפועל": "0.5%", "צפי": "0.5%", "קודם": "0.6%"},
+    {"שעה": "08:30 AM", "אירוע": "Inflation Rate YoY", "תקופה": "May", "בפועל": "4.2%", "צפי": "4.2%", "קודם": "3.8%"},
+    {"שעה": "10:30 AM", "אירוע": "EIA Crude Oil Stocks (מלאי נפט)", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M"},
+    {"שעה": "10:30 AM", "אירוע": "EIA Gasoline Stocks", "תקופה": "Jun 6", "בפועל": "0.186M", "צפי": "-0.5M", "קודם": "3.364M"},
 ]
-st.table(pd.DataFrame(cal_data))
+
+df_cal = pd.DataFrame(raw_calendar_data)
+
+# אלגוריתם לצביעת הנתון בפועל מול הצפי
+def highlight_actual(row):
+    try:
+        # ניקוי סימנים מיוחדים כדי לאפשר השוואה מתמטית
+        actual_val = float(row['בפועל'].replace('%', '').replace('M', ''))
+        expected_val = float(row['צפי'].replace('%', '').replace('M', ''))
+        
+        # צביעת הרקע של תא "בפועל" בלבד (אינדקס 3 ברשימת העמודות)
+        if actual_val > expected_val:
+            return [''] * 3 + ['background-color: rgba(255, 0, 0, 0.2); color: #ff4b4b; font-weight: bold;'] + [''] * 2
+        elif actual_val < expected_val:
+            return [''] * 3 + ['background-color: rgba(0, 255, 0, 0.2); color: #00ff00; font-weight: bold;'] + [''] * 2
+        else:
+            return [''] * 3 + ['background-color: rgba(128, 128, 128, 0.2); font-weight: bold;'] + [''] * 2
+    except:
+        return [''] * len(row)
+
+# הצגת הטבלה בדשבורד עם העיצוב
+st.dataframe(
+    df_cal.style.apply(highlight_actual, axis=1),
+    use_container_width=True,
+    hide_index=True
+)
 
 time.sleep(15)
 st.rerun()
