@@ -9,7 +9,7 @@ import requests
 import pandas_market_calendars as mcal
 
 # --- פונקציות מתמטיות של צינור הנתונים המוסדי ---
-@st.cache_data(ttl=3600) # נשמור בזיכרון מטמון כדי לא לחשב הרסט כל 15 שניות
+@st.cache_data(ttl=3600)
 def calculate_hurst(series):
     if len(series) < 30: return 0.5
     lags = range(2, 15)
@@ -34,23 +34,6 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-def is_tom_window():
-    nyse = mcal.get_calendar('NYSE')
-    today_raw = datetime.now()
-    today = pd.Timestamp(today_raw.date())
-    start_date = today_raw - timedelta(days=15)
-    end_date = today_raw + timedelta(days=15)
-    schedule = nyse.schedule(start_date=start_date, end_date=end_date)
-    trading_days = schedule.index.tz_localize(None)
-    
-    current_month = today.month
-    current_month_days = [d for d in trading_days if d.month == current_month]
-    prev_month_days = [d for d in trading_days if d.month != current_month and d < today]
-    
-    if not prev_month_days or not current_month_days: return False
-    tom_window = [prev_month_days[-1]] + current_month_days[:4]
-    return today in tom_window
-
 # --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
 
@@ -73,6 +56,13 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+# הגדרת זמן המערכת שכנראה נדרסה בטעות מקודם
+now_dt = datetime.now()
+
+st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
+st.write(f"🔄 מתעדכן חי (כל 15 שניות) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.markdown("---")
 
 # --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
 assets = {
@@ -252,10 +242,9 @@ st.markdown("---")
 st.subheader("📅 יומן אירועי קצה - מאקרו בזמן אמת")
 today_date = now_dt.date()
 tomorrow_date = today_date + timedelta(days=1)
-after_tomorrow_date = today_date + timedelta(days=2)
 
 all_events = [
-    {"תאריך": today_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "CPI", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02", "is_lower_better": True},
+    {"תאריך": today_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "CPI מדד המחירים לצרכן", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02", "is_lower_better": True},
     {"תאריך": today_date, "שעה": "10:30 AM", "עוצמה": "🟠", "אירוע": "EIA Crude Oil Stocks Change", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M", "is_lower_better": False},
     {"תאריך": tomorrow_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "Core PPI MoM", "תקופה": "May", "בפועל": "--", "צפי": "0.2%", "קודם": "0.1%", "is_lower_better": True},
     {"תאריך": tomorrow_date, "שעה": "02:30 PM", "עוצמה": "🟠", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "בפועל": "--", "צפי": "215K", "קודם": "220K", "is_lower_better": True}
@@ -429,7 +418,6 @@ for ticker, info in matrix_sectors.items():
             sym_lead = "🧭" if is_macro_aligned else "➖"
             sym_macro = "🌍" if base_w != 0 else "➖"
             
-            # תוספת u200E כופה על הדפדפן לקרוא משמאל לימין ולמנוע את כתב הראי!
             sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_lead} {sym_macro}"
             
             # ביצוע הדק וטקסטים
@@ -451,15 +439,15 @@ for ticker, info in matrix_sectors.items():
 
             matrix_table_data.append({
                 "פאנל חיווי": sym_panel,
-                "הדק (ביצוע)": trigger_text,
-                "סקטור (בסיס)": info['name'],
-                "קפיץ משוקלל": status_text,
-                "🔥 מתיחת (RSI)": f"{rsi_w:+.1f}",
-                "📉 הגנת (Hurst)": hurst_mult_str,
-                "⏳ תזמון (Gann)": gann_mult_str,
-                "📅 עונתיות (TOM)": f"{cal_w:+d}",
-                "🧭 איתות (Lead)": lead_reason,
-                "🌍 משקל (מאקרו)": f"{base_w:+d}",
+                "הדק\n(ביצוע)": trigger_text,
+                "סקטור\n(בסיס)": info['name'],
+                "קפיץ\nמשוקלל": status_text,
+                "🔥 (RSI)\nמתיחת מיקרו": f"{rsi_w:+.1f}",
+                "📉 (Hurst)\nמכפיל הגנה": hurst_mult_str,
+                "⏳ (Gann)\nתזמון": gann_mult_str,
+                "📅 (TOM)\nעונתיות": f"{cal_w:+d}",
+                "🧭 (Lead)\nאיתות": lead_reason,
+                "🌍 (Macro)\nמשקל": f"{base_w:+d}",
                 "score": confluence_score
             })
     except: pass
@@ -469,26 +457,24 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
-    # סידור העמודות בדיוק מוחלט (משמאל קיצוני ועד ימין קיצוני) משולב עם סמלי הכותרות
     df_matrix = df_matrix[[
-        'פאנל חיווי',         # שמאל 1
-        'הדק (ביצוע)',        # שמאל 2
-        'סקטור (בסיס)',       # שמאל 3
-        'קפיץ משוקלל',        # שמאל 4
-        '🔥 מתיחת (RSI)',     # מתאים לסמל 🔥
-        '📉 הגנת (Hurst)',    # מתאים לסמל 📉
-        '⏳ תזמון (Gann)',    # מתאים לסמל ⏳
-        '📅 עונתיות (TOM)',   # מתאים לסמל 📅
-        '🧭 איתות (Lead)',    # מתאים לסמל 🧭
-        '🌍 משקל (מאקרו)'     # מתאים לסמל 🌍
+        'פאנל חיווי',
+        'הדק\n(ביצוע)',
+        'סקטור\n(בסיס)',
+        'קפיץ\nמשוקלל',
+        '🔥 (RSI)\nמתיחת מיקרו',
+        '📉 (Hurst)\nמכפיל הגנה',
+        '⏳ (Gann)\nתזמון',
+        '📅 (TOM)\nעונתיות',
+        '🧭 (Lead)\nאיתות',
+        '🌍 (Macro)\nמשקל'
     ]]
 
     def style_matrix(row):
         styles = [''] * len(row)
-        score_val = str(row['קפיץ משוקלל'])
+        score_val = str(row['קפיץ\nמשוקלל'])
         sym_panel = str(row['פאנל חיווי'])
         
-        # הדלקת צבע שורה מלא רק אם יש לפחות 3 סמלים פעילים במקביל
         active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
         
         if active_symbols >= 3:
