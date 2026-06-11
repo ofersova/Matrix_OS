@@ -108,4 +108,27 @@ def get_asset_metrics(name, ticker):
         p_15m = df_1m['Close'].iloc[-16] if len(df_1m) >= 16 else current_price
         
         def get_arrow_html(curr, past):
-            return "<span style='
+            return "<span style='color: #00ff00;'>🔼</span>" if curr >= past else "<span style='color: #ff0000;'>🔽</span>"
+            
+        arrow_1m = get_arrow_html(current_price, p_1m)
+        arrow_5m = get_arrow_html(current_price, p_5m)
+        arrow_15m = get_arrow_html(current_price, p_15m)
+        
+        df_15m = ticker_obj.history(period="1d", interval="15m")
+        if df_15m.empty: df_15m = df_1m 
+        
+        fig = go.Figure(data=[go.Candlestick(
+            x=df_15m.index, open=df_15m['Open'], high=df_15m['High'],
+            low=df_15m['Low'], close=df_15m['Close'],
+            increasing_line_color='#00ff00', increasing_fillcolor='#00ff00',
+            decreasing_line_color='#ff0000', decreasing_fillcolor='#ff0000'
+        )])
+        
+        fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=60, width=180,
+            xaxis_rangeslider_visible=False, xaxis=dict(visible=False), yaxis=dict(visible=False),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        
+        return {
+            'נכס': name,
+            'מחיר אחרון': f"{current_price:.2f}" if current_price > 1 else f"{current_price:.4f}",
+            'שינוי יו
