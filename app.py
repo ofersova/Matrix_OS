@@ -25,16 +25,16 @@ def calculate_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_atr(data, window=14):
-    high_low = data['High'] - data['Low']
-    high_close = np.abs(data['High'] - data['Close'].shift())
-    low_close = np.abs(data['Low'] - data['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    atr = true_range.rolling(window=window).mean()
-    return atr
+# --- פונקציות זיכרון מטמון למניעת הבהובים ---
+@st.cache_data(ttl=15)
+def fetch_macro_data():
+    return yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
 
-# --- הגדרות עמוד ועיצוב מוסדי קשוח ---
+@st.cache_data(ttl=15)
+def fetch_sector_data(ticker):
+    return yf.download(ticker, period='5d', interval='15m', auto_adjust=True, progress=False)
+
+# --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
 
 st.markdown("""
@@ -45,17 +45,14 @@ st.markdown("""
     .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
     @keyframes blinker { 50% { opacity: 0; } }
     
-    /* הפתרון הסופי לשקיפות: דריסת תגית ה-stale המובנית של סטרימליט */
-    *[data-stale="true"] {
+    /* מניעת שקיפות נתונים בלבד מבלי לפגוע ברקע השחור המקורי */
+    [data-testid="stDataFrame"], 
+    [data-testid="stMetricValue"], 
+    [data-testid="stMarkdownContainer"] {
         opacity: 1 !important;
-        filter: none !important;
         transition: none !important;
-        pointer-events: auto !important;
     }
-    
-    /* העלמת ספינר הטעינה הקופצני בפינה הימנית העליונה */
-    [data-testid="stStatusWidget"] {
-        visibility: hidden !important;
+    div[data-testid="stStatusWidget"] {
         display: none !important;
     }
     </style>
@@ -307,12 +304,8 @@ st.markdown("---")
 # --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
 st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
 
-@st.cache_data(ttl=15)
-def get_macro_history():
-    return yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
-
 try:
-    hist_market = get_macro_history()
+    hist_market = fetch_macro_data()
     if isinstance(hist_market.columns, pd.MultiIndex):
         hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
     
@@ -332,7 +325,7 @@ current_day = now_dt.day
 current_month = now_dt.month
 
 is_tom_active = True if current_day >= 26 or current_day <= 4 else False
-is_pre_tom_active = True if 15 <= current_day <= 22 else False # משיכת נזילות לפני סוף חודש
+is_pre_tom_active = True if 15 <= current_day <= 22 else False 
 is_gann_window = True if (20 <= current_day <= 23) and (current_month in [3, 6, 9, 12]) else False
 
 tom_color = "normal" if is_tom_active else "off"
@@ -354,4 +347,138 @@ st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
 
 matrix_sectors = {
-    'QQQ': {'name': 'טכנולוגיה ונאסד"ק', 'long_3x': 'TQQQ', 'short_3
+    'QQQ': {'name': 'טכנולוגיה', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'SOXX': {'name': 'שבבים (SOXX)', 'long_3x': 'SOXL', 'short_3x': 'SOXS', 'base_weight': -15 if erp_stress > 0.25 else 0},
+    'XLF': {'name': 'פיננסים (XLF)', 'long_3x': 'FAS', 'short_3x': 'FAZ', 'base_weight': 10 if tnx_val > 4.2 else 0},
+    'IWM': {'name': 'ראסל 2000 (IWM)', 'long_3x': 'TNA', 'short_3x': 'TZA', 'base_weight': -15 if tnx_val > 4.2 else 0},
+    'XLE': {'name': 'אנרגיה (XLE)', 'long_3x': 'ERX', 'short_3x': 'ERY', 'base_weight': 15 if "Backwardation" in term_structure else 0},
+    'XLRE': {'name': 'נדלן (XLRE)', 'long_3x': 'DRN', 'short_3x': 'DRV', 'base_weight': -20 if tnx_val > 4.2 else 0},
+    'XBI': {'name': 'ביוטק (XBI)', 'long_3x': 'LABU', 'short_3x': 'LABD', 'base_weight': 0}
+}
+
+matrix_table_data = []
+
+for ticker, info in matrix_sectors.items():
+    try:
+        df_sector = fetch_sector_data(ticker)
+        if not df_sector.empty:
+            if isinstance(df_sector.columns, pd.MultiIndex):
+                df_sector.columns = [col[0] for col in df_sector.columns]
+                
+            df_sector['RSI'] = calculate_rsi(df_sector)
+            last_row = df_sector.iloc[-1]
+            rsi = float(last_row['RSI'])
+            
+            base_w = info['base_weight']
+            rsi_w = 50.0 - rsi
+            
+            cal_w = 0
+            if is_tom_active: cal_w = 25
+            elif is_pre_tom_active: cal_w = -25
+            
+            confluence_score = base_w + rsi_w + cal_w
+            
+            hurst_mult_str = "x1.5" if hurst_spy < 0.5 else "x1.0"
+            gann_mult_str = "x1.2" if is_gann_window else "x1.0"
+            
+            if hurst_spy < 0.5: confluence_score *= 1.5 
+            if is_gann_window: confluence_score *= 1.2
+            
+            lead_reason = ""
+            is_macro_aligned = False
+            
+            if ticker == 'XLF' and tnx_val > 4.2: 
+                lead_reason = "TNX זינוק"
+                is_macro_aligned = (confluence_score > 0)
+            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
+                lead_reason = "TNX לחץ"
+                is_macro_aligned = (confluence_score < 0)
+            elif ticker == 'XLE' and "Backwardation" in term_structure: 
+                lead_reason = "נפט ב-Backwardation"
+                is_macro_aligned = (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX'] and erp_stress < 0.25: 
+                lead_reason = "VIX בשפל"
+                is_macro_aligned = (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX'] and erp_stress > 0.25: 
+                lead_reason = "ERP זינוק"
+                is_macro_aligned = (confluence_score < 0)
+            else: 
+                lead_reason = "זרימה פנימית"
+                is_macro_aligned = False
+
+            sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
+            sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
+            sym_gann = "⏳" if is_gann_window else "➖"
+            sym_tom = "📅" if cal_w != 0 else "➖"
+            sym_lead = "🧭" if is_macro_aligned else "➖"
+            sym_macro = "🌍" if base_w != 0 else "➖"
+            
+            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_lead} {sym_macro}"
+            
+            if confluence_score > 25:
+                status_text = f"🟢 +{confluence_score:.1f} (לונג)"
+                trigger_text = f"{info['long_3x']}"
+            elif confluence_score < -25:
+                status_text = f"🔴 {confluence_score:.1f} (שורט)"
+                trigger_text = f"{info['short_3x']}"
+            elif confluence_score > 10:
+                status_text = f"⚪ +{confluence_score:.1f}"
+                trigger_text = "--"
+            elif confluence_score < -10:
+                status_text = f"⚪ {confluence_score:.1f}"
+                trigger_text = "--"
+            else:
+                status_text = f"⚪ {confluence_score:.1f}"
+                trigger_text = "--"
+
+            matrix_table_data.append({
+                "פאנל חיווי": sym_panel,
+                "הדק\n(ביצוע)": trigger_text,
+                "סקטור\n(בסיס)": info['name'],
+                "קפיץ\nמשוקלל": status_text,
+                "🔥 (RSI)\nמתיחת מיקרו": f"{rsi_w:+.1f}",
+                "📉 (Hurst)\nמכפיל הגנה": hurst_mult_str,
+                "⏳ (Gann)\nתזמון": gann_mult_str,
+                "📅 (TOM)\nעונתיות": f"{cal_w:+d}",
+                "🧭 (Lead)\nאיתות": lead_reason,
+                "🌍 (Macro)\nמשקל": f"{base_w:+d}",
+                "score": confluence_score
+            })
+    except: pass
+
+if matrix_table_data:
+    df_matrix = pd.DataFrame(matrix_table_data)
+    df_matrix['abs_score'] = df_matrix['score'].abs()
+    df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
+    
+    df_matrix = df_matrix[[
+        'פאנל חיווי',
+        'הדק\n(ביצוע)',
+        'סקטור\n(בסיס)',
+        'קפיץ\nמשוקלל',
+        '🔥 (RSI)\nמתיחת מיקרו',
+        '📉 (Hurst)\nמכפיל הגנה',
+        '⏳ (Gann)\nתזמון',
+        '📅 (TOM)\nעונתיות',
+        '🧭 (Lead)\nאיתות',
+        '🌍 (Macro)\nמשקל'
+    ]]
+
+    def style_matrix(row):
+        styles = [''] * len(row)
+        score_val = str(row['קפיץ\nמשוקלל'])
+        sym_panel = str(row['פאנל חיווי'])
+        
+        active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
+        
+        if active_symbols >= 3:
+            if "לונג" in score_val: 
+                return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+            elif "שורט" in score_val: 
+                return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+        return styles
+
+    st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+
+time.sleep(15)
+st.rerun()
