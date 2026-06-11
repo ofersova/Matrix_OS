@@ -25,6 +25,15 @@ def calculate_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+def calculate_atr(data, window=14):
+    high_low = data['High'] - data['Low']
+    high_close = np.abs(data['High'] - data['Close'].shift())
+    low_close = np.abs(data['Low'] - data['Close'].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = ranges.max(axis=1)
+    atr = true_range.rolling(window=window).mean()
+    return atr
+
 # --- פונקציות זיכרון מטמון למניעת הבהובים ---
 @st.cache_data(ttl=15)
 def fetch_macro_data():
@@ -45,14 +54,16 @@ st.markdown("""
     .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
     @keyframes blinker { 50% { opacity: 0; } }
     
-    /* מניעת שקיפות נתונים בלבד מבלי לפגוע ברקע השחור המקורי */
-    [data-testid="stDataFrame"], 
-    [data-testid="stMetricValue"], 
-    [data-testid="stMarkdownContainer"] {
+    /* --- נשק יום הדין לחיסול העמעום --- */
+    /* פוקד על כל האלמנטים במסך לשמור על 100% אטימות, מתעלם מפקודות סטרימליט בזמן טעינה */
+    .stApp *:not(.blink) {
         opacity: 1 !important;
         transition: none !important;
     }
+    
+    /* העלמת הספינר הקופצני בפינה */
     div[data-testid="stStatusWidget"] {
+        opacity: 0 !important;
         display: none !important;
     }
     </style>
@@ -346,6 +357,7 @@ col_mac4.metric("📅 סטטוס קלנדרי", cal_status, "חלון מוסדי
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
 
+# הוסרו המירכאות מתוך הערכים 'טכנולוגיה' ו-'נדלן' למניעת שגיאת קוד במערכת
 matrix_sectors = {
     'QQQ': {'name': 'טכנולוגיה', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
     'SOXX': {'name': 'שבבים (SOXX)', 'long_3x': 'SOXL', 'short_3x': 'SOXS', 'base_weight': -15 if erp_stress > 0.25 else 0},
