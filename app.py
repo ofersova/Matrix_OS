@@ -485,7 +485,7 @@ if matrix_table_data:
         '🌍 (Macro)\nמשקל'
     ]]
 
-    def style_matrix(row):
+  def style_matrix(row):
         styles = [''] * len(row)
         score_val = str(row['קפיץ\nמשוקלל'])
         sym_panel = str(row['פאנל חיווי'])
@@ -499,8 +499,7 @@ if matrix_table_data:
                 return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
         return styles
 
-   styled_matrix = df_matrix.style.hide(axis="index").apply(style_matrix, axis=1)
-st.table(styled_matrix))
+    st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True, height=750)
 
 time.sleep(15)
 st.rerun()
