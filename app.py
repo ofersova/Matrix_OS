@@ -25,7 +25,7 @@ def calculate_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# פונקציות שאיבת נתונים עם זיכרון מטמון (מונע את הבהוב המסך!)
+# --- פונקציות שאיבת נתונים עם זיכרון מטמון למניעת הבהוב ---
 @st.cache_data(ttl=15)
 def get_macro_data():
     return yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
@@ -44,27 +44,21 @@ def get_cnn_fear_greed():
     except:
         return None
 
-# --- הגדרות עמוד ועיצוב מוסדי קשוח ---
+# --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
 
 st.markdown("""
     <style>
-    .reportview-container { background: #0e1117; }
     .green-text { color: #00ff00; font-weight: bold; font-size: 16px; }
     .red-text { color: #ff0000; font-weight: bold; font-size: 16px; }
     .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
     @keyframes blinker { 50% { opacity: 0; } }
-    
-    /* חסימה אגרסיבית של עמעום המסך וההבהובים בזמן רענון */
-    .stApp > header { display: none !important; }
-    [data-testid="stAppViewContainer"], .stApp { opacity: 1 !important; background-color: #0e1117 !important; transition: none !important; }
-    [data-testid="stStatusWidget"] { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
 now_dt = datetime.now()
 st.title("⚡ Matrix OS - מערכת פיקוד מוסדית")
-st.write(f"🔄 מתעדכן חי (ללא הבהוב) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.write(f"🔄 מתעדכן חי (מבוסס מטמון) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # --- רשימות נכסים ומעקב ---
@@ -123,29 +117,6 @@ with col_m1:
 with col_m3:
     st.markdown("### 📢 מבזקי מערכת")
     st.markdown("<p class='blink'>🚨 התראת מאקרו: שים לב לאירועים בלוח!</p>", unsafe_allow_html=True)
-    st.info("💡 המערכת פועלת כעת במצב מטמון (Cache) כדי למנוע הבהובים. המידע מתרענן בצורה חלקה.")
-
-st.markdown("---")
-
-# --- רוטציית סקטורים ---
-st.subheader("🔄 מפת רוטציית סקטורים יומית")
-sec_data = []
-for name, ticker in sectors.items():
-    try:
-        t_obj = yf.Ticker(ticker)
-        i = t_obj.fast_info
-        c_p = i.last_price
-        p_p = i.previous_close
-        chg = ((c_p - p_p) / p_p) * 100
-        sec_data.append({'name': name, 'price': f"{c_p:.2f}", 'chg': f"{chg:.2f}%", 'pos': chg >= 0})
-    except: pass
-
-if sec_data:
-    sec_cols = st.columns(3)
-    for idx, s in enumerate(sec_data):
-        with sec_cols[idx % 3]:
-            txt_color = "green-text" if s['pos'] else "red-text"
-            st.markdown(f"**{s['name']}**: {s['price']} | <span class='{txt_color}'>{s['chg']}</span>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -190,7 +161,6 @@ col_mac4.metric("📅 סטטוס קלנדרי", cal_status, "חלון מוסדי
 
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
-st.caption("מקרא סמלים: 🌍 מאקרו | 🧭 אינדיקטור מקדים | 📅 עונתיות | ⏳ היפוך גאן | 📉 מדד הרסט | 🔥 מתיחת RSI")
 
 matrix_sectors = {
     'QQQ': {'name': 'טכנולוגיה', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
@@ -253,16 +223,16 @@ for ticker, info in matrix_sectors.items():
             else: status_text, trigger_text = f"⚪ {confluence_score:.1f}", "--"
 
             matrix_table_data.append({
-                "סמלים": sym_panel,
-                "ביצוע": trigger_text,
-                "סקטור": info['name'],
-                "קפיץ": status_text,
-                "RSI 🔥": f"{rsi_w:+.1f}",
-                "Hurst 📉": hurst_mult_str,
-                "Gann ⏳": gann_mult_str,
-                "TOM 📅": f"{cal_w:+d}",
-                "איתות 🧭": lead_reason,
-                "מאקרו 🌍": f"{base_w:+d}",
+                "פאנל חיווי": sym_panel,
+                "הדק (ביצוע)": trigger_text,
+                "סקטור (בסיס)": info['name'],
+                "קפיץ משוקלל": status_text,
+                "🔥 מתיחת (RSI)": f"{rsi_w:+.1f}",
+                "📉 הגנת (Hurst)": hurst_mult_str,
+                "⏳ תזמון (Gann)": gann_mult_str,
+                "📅 עונתיות (TOM)": f"{cal_w:+d}",
+                "🧭 איתות (Lead)": lead_reason,
+                "🌍 משקל (מאקרו)": f"{base_w:+d}",
                 "score": confluence_score
             })
     except: pass
@@ -272,13 +242,24 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
-    # סידור עם שמות קצרים ומהודקים
-    df_matrix = df_matrix[['סמלים', 'ביצוע', 'סקטור', 'קפיץ', 'RSI 🔥', 'Hurst 📉', 'Gann ⏳', 'TOM 📅', 'איתות 🧭', 'מאקרו 🌍']]
+    # סידור העמודות המקורי והטוב
+    df_matrix = df_matrix[[
+        'פאנל חיווי',
+        'הדק (ביצוע)',
+        'סקטור (בסיס)',
+        'קפיץ משוקלל',
+        '🔥 מתיחת (RSI)',
+        '📉 הגנת (Hurst)',
+        '⏳ תזמון (Gann)',
+        '📅 עונתיות (TOM)',
+        '🧭 איתות (Lead)',
+        '🌍 משקל (מאקרו)'
+    ]]
 
     def style_matrix(row):
         styles = [''] * len(row)
-        score_val = str(row['קפיץ'])
-        sym_panel = str(row['סמלים'])
+        score_val = str(row['קפיץ משוקלל'])
+        sym_panel = str(row['פאנל חיווי'])
         active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
         
         if active_symbols >= 3:
