@@ -46,9 +46,25 @@ def fetch_sector_data(ticker):
 # --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
 
-# החלפנו את המירכאות המשולשות במשתנה בטוח למניעת חיתוך בהדבקה
-css_code = "<style>\n.reportview-container { background: #0e1117; }\n.green-text { color: #00ff00; font-weight: bold; font-size: 16px; }\n.red-text { color: #ff0000; font-weight: bold; font-size: 16px; }\n.blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }\n@keyframes blinker { 50% { opacity: 0; } }\n.stApp *:not(.blink) { opacity: 1 !important; transition: none !important; }\ndiv[data-testid='stStatusWidget'] { opacity: 0 !important; display: none !important; }\n</style>"
-st.markdown(css_code, unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    .reportview-container { background: #0e1117; }
+    .green-text { color: #00ff00; font-weight: bold; font-size: 16px; }
+    .red-text { color: #ff0000; font-weight: bold; font-size: 16px; }
+    .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
+    @keyframes blinker { 50% { opacity: 0; } }
+    
+    /* מניעת שקיפות נתונים בלבד מבלי לפגוע ברקע השחור המקורי */
+    .stApp *:not(.blink) {
+        opacity: 1 !important;
+        transition: none !important;
+    }
+    div[data-testid="stStatusWidget"] {
+        opacity: 0 !important;
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 now_dt = datetime.now()
 
@@ -92,102 +108,4 @@ def get_asset_metrics(name, ticker):
         p_15m = df_1m['Close'].iloc[-16] if len(df_1m) >= 16 else current_price
         
         def get_arrow_html(curr, past):
-            return "<span style='color: #00ff00;'>🔼</span>" if curr >= past else "<span style='color: #ff0000;'>🔽</span>"
-            
-        arrow_1m = get_arrow_html(current_price, p_1m)
-        arrow_5m = get_arrow_html(current_price, p_5m)
-        arrow_15m = get_arrow_html(current_price, p_15m)
-        
-        df_15m = ticker_obj.history(period="1d", interval="15m")
-        if df_15m.empty: df_15m = df_1m 
-        
-        fig = go.Figure(data=[go.Candlestick(
-            x=df_15m.index, open=df_15m['Open'], high=df_15m['High'],
-            low=df_15m['Low'], close=df_15m['Close'],
-            increasing_line_color='#00ff00', increasing_fillcolor='#00ff00',
-            decreasing_line_color='#ff0000', decreasing_fillcolor='#ff0000'
-        )])
-        
-        fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=60, width=180,
-            xaxis_rangeslider_visible=False, xaxis=dict(visible=False), yaxis=dict(visible=False),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        
-        return {
-            'נכס': name,
-            'מחיר אחרון': f"{current_price:.2f}" if current_price > 1 else f"{current_price:.4f}",
-            'שינוי יומי': f"{daily_change:.2f}%",
-            'מגמת 1m': arrow_1m,
-            'מגמת 5m': arrow_5m,
-            'מגמת 15m': arrow_15m,
-            'גרף': fig,
-            'is_positive': daily_change >= 0
-        }
-    except:
-        return None
-
-# --- קומת המאקרו העליונה ---
-col_m1, col_m2, col_m3 = st.columns([1, 2, 1])
-
-with col_m2:
-    try:
-        vix_df = yf.Ticker('^VIX').history(period="1d")
-        vix_now = vix_df['Close'].iloc[-1] if not vix_df.empty else 20
-        fg_score = 100 - (vix_now * 2.5)
-        fg_score = max(min(fg_score, 100), 0)
-    except:
-        fg_score = 50
-        
-    fig_gauge = go.Figure(go.Indicator(
-        mode = "gauge+number", value = fg_score,
-        title = {'text': "מדד פחד וחמדנות משוקלל (VIX סינתטי)"},
-        gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "white"},
-            'steps': [{'range': [0, 25], 'color': "darkred"}, {'range': [25, 45], 'color': "red"},
-                {'range': [45, 55], 'color': "gray"}, {'range': [55, 75], 'color': "lightgreen"}, {'range': [75, 100], 'color': "green"}]}
-    ))
-    fig_gauge.update_layout(height=180, margin=dict(l=10, r=10, t=60, b=10))
-    st.plotly_chart(fig_gauge, use_container_width=True)
-
-with col_m1:
-    try:
-        dxy_val = yf.Ticker('DX-Y.NYB').history(period="1d")['Close'].iloc[-1]
-        st.metric("DXY Dollar Index", f"{dxy_val:.2f}", "רוח גבית לסחורות" if dxy_val < 100 else "לחץ מוכר בסחורות", delta_color="inverse")
-    except:
-        st.metric("DXY Dollar Index", "99.82")
-        
-    st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-    
-    # --- התיקון הבטוח ל-CNN שעוקף חסימות (ללא מירכאות בעייתיות) ---
-    try:
-        url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers_cnn = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Referer': 'https://edition.cnn.com/', 'Accept-Language': 'en-US,en;q=0.9'}
-        r_cnn = requests.get(url, headers=headers_cnn, timeout=10)
-        if r_cnn.status_code == 200:
-            data = r_cnn.json()
-            cnn_score = int(data['fear_and_greed']['score'])
-            cnn_rating = data['fear_and_greed']['rating'].capitalize()
-            st.metric("CNN Fear & Greed", f"{cnn_score} / 100", cnn_rating, delta_color="off")
-        else:
-            st.metric("CNN Fear & Greed", "--", "שגיאת חיבור (חסום)")
-    except:
-        st.metric("CNN Fear & Greed", "--", "שגיאת רשת")
-    # --- סוף התיקון ---
-
-with col_m3:
-    st.markdown("### 📢 משבשי מגמה ומבזקים")
-    st.markdown("<p class='blink'>🚨 התראת מאקרו: שים לב לפרסום נתוני נפט/אינפלציה בלוח!</p>", unsafe_allow_html=True)
-    st.info("💡 שים לב: פריצה של נר 15 דק' אחרון בגרף מלווה בחצים ירוקים מעידה על כניסת מוסדיים.")
-
-st.markdown("---")
-
-# --- עורק הנתונים המרכזי ---
-st.subheader("📊 סריקה רוחבית (מומנטום ונרות יפניים מהפתיחה)")
-rows_data = []
-for name, ticker in assets.items():
-    res = get_asset_metrics(name, ticker)
-    if res: rows_data.append(res)
-
-if rows_data:
-    cols = st.columns([2, 1.5, 1.5, 1, 1, 1, 3])
-    cols[0].markdown("**שם הנכס**")
-    cols[1].markdown("**מחיר**")
-    cols[2].markdown("**שי
+            return "<span style='
