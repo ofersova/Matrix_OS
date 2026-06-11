@@ -308,3 +308,122 @@ else:
 st.markdown("---")
 
 # --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
+st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
+
+try:
+    hist_market = yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
+    if isinstance(hist_market.columns, pd.MultiIndex):
+        hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
+    
+    spy_closes = hist_market['Close_SPY'].dropna().values
+    vix_val = float(hist_market['Close_^VIX'].dropna().iloc[-1])
+    tnx_val = float(hist_market['Close_^TNX'].dropna().iloc[-1])
+    oil_price = float(hist_market['Close_CL=F'].dropna().iloc[-1])
+    
+    hurst_spy = calculate_hurst(spy_closes)
+    erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
+    term_structure = "Backwardation" if oil_price > 80 else "Contango"
+except:
+    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
+    term_structure = "ניטרלי"
+
+is_tom_active = is_tom_window()
+tom_color = "normal" if is_tom_active else "off"
+
+col_mac1, col_mac2, col_mac3, col_mac4 = st.columns(4)
+col_mac1.metric("📉 משטר שוק (Hurst)", f"{hurst_spy:.2f}", "מגמתי שורי (H > 0.5)" if hurst_spy > 0.5 else "שוק דשדוש", delta_color="normal" if hurst_spy > 0.5 else "inverse")
+col_mac2.metric("🛢️ עקום הנפט (WTI)", f"{oil_price:.2f}$", f"{term_structure} (הגנת לונג)", delta_color="normal" if "Backwardation" in term_structure else "inverse")
+col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", f"{erp_stress:.2f}", "שוק רגוע (Risk-On)" if erp_stress < 0.25 else "שוק בסיכון", delta_color="inverse")
+col_mac4.metric("📅 סטטוס קלנדרי (TOM)", "פעיל" if is_tom_active else "שגרה", "לחץ קניות מוסדי" if is_tom_active else "", delta_color=tom_color)
+
+st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
+st.subheader("🎯 טבלת צלפים: סנכרון רב-ממדי (Lead-Lag Matrix)")
+
+matrix_sectors = {
+    'QQQ': {'name': 'טכנולוגיה ונאסד"ק', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'SOXX': {'name': 'שבבים (SOXX)', 'long_3x': 'SOXL', 'short_3x': 'SOXS', 'base_weight': -15 if erp_stress > 0.25 else 0},
+    'XLF': {'name': 'פיננסים (XLF)', 'long_3x': 'FAS', 'short_3x': 'FAZ', 'base_weight': 10 if tnx_val > 4.2 else 0},
+    'IWM': {'name': 'ראסל 2000 (IWM)', 'long_3x': 'TNA', 'short_3x': 'TZA', 'base_weight': -15 if tnx_val > 4.2 else 0},
+    'XLE': {'name': 'אנרגיה (XLE)', 'long_3x': 'ERX', 'short_3x': 'ERY', 'base_weight': 15 if "Backwardation" in term_structure else 0},
+    'XLRE': {'name': 'נדל"ן (XLRE)', 'long_3x': 'DRN', 'short_3x': 'DRV', 'base_weight': -20 if tnx_val > 4.2 else 0},
+    'XBI': {'name': 'ביוטק (XBI)', 'long_3x': 'LABU', 'short_3x': 'LABD', 'base_weight': 0}
+}
+
+matrix_table_data = []
+
+for ticker, info in matrix_sectors.items():
+    try:
+        df_sector = yf.download(ticker, period='5d', interval='15m', auto_adjust=True, progress=False)
+        if not df_sector.empty:
+            if isinstance(df_sector.columns, pd.MultiIndex):
+                df_sector.columns = [col[0] for col in df_sector.columns]
+                
+            df_sector['RSI'] = calculate_rsi(df_sector)
+            last_row = df_sector.iloc[-1]
+            rsi = float(last_row['RSI'])
+            
+            rsi_stretch_weight = 50.0 - rsi
+            calendar_weight = 25 if is_tom_active else 0
+            confluence_score = info['base_weight'] + rsi_stretch_weight + calendar_weight
+            if hurst_spy < 0.5: confluence_score *= 1.5 
+            
+            # לוגיקה חכמה ואמיתית לאינדיקטור המקדים (Lead)
+            lead_reason = ""
+            if ticker == 'XLF' and tnx_val > 4.2: lead_reason = "תשואות TNX מזנקות"
+            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: lead_reason = "לחץ תשואות TNX"
+            elif ticker == 'XLE' and "Backwardation" in term_structure: lead_reason = "נפט ב-Backwardation"
+            elif ticker in ['QQQ', 'SOXX'] and erp_stress < 0.25: lead_reason = "מדד פחד (VIX) בשפל"
+            elif ticker in ['QQQ', 'SOXX'] and erp_stress > 0.25: lead_reason = "זינוק בערוץ הלחץ (ERP)"
+            else: lead_reason = "זרימת הון פנימית"
+            
+            if confluence_score > 25:
+                status_text = f"🟢 +{confluence_score:.1f} (מתוח ללונג)"
+                trigger_text = f"{info['long_3x']} (לונג)"
+                lead_text = f"🎯🎯🎯 ({lead_reason})"
+            elif confluence_score < -25:
+                status_text = f"🔴 {confluence_score:.1f} (מתוח לשורט)"
+                trigger_text = f"{info['short_3x']} (שורט)"
+                lead_text = f"🎯🎯🎯 ({lead_reason})"
+            elif confluence_score > 10:
+                status_text = f"⚪ +{confluence_score:.1f} (איסוף ראשוני)"
+                trigger_text = "--"
+                lead_text = f"🎯 ({lead_reason})"
+            elif confluence_score < -10:
+                status_text = f"⚪ {confluence_score:.1f} (פיזור ראשוני)"
+                trigger_text = "--"
+                lead_text = f"🎯 ({lead_reason})"
+            else:
+                status_text = f"⚪ {confluence_score:.1f} (ניטרלי)"
+                trigger_text = "--"
+                lead_text = "--"
+
+            matrix_table_data.append({
+                "סקטור (בסיס)": info['name'],
+                "הדק (ביצוע)": trigger_text,
+                "קפיץ מתוח": status_text,
+                "סנטימנט מאקרו": "🟩 Hurst שורי" if hurst_spy > 0.5 else "⬜ דשדוש",
+                "זמן ועונתיות": "🟩 TOM פעיל" if is_tom_active else "⬜ שגרה",
+                "אינדיקטור מקדים (Lead)": lead_text,
+                "score": confluence_score
+            })
+    except: pass
+
+if matrix_table_data:
+    df_matrix = pd.DataFrame(matrix_table_data)
+    df_matrix['abs_score'] = df_matrix['score'].abs()
+    df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
+    
+    # סידור העמודות: מיקרו והדק משמאל (בהתחלה), מאקרו מימין (בסוף הטבלה)
+    df_matrix = df_matrix[['הדק (ביצוע)', 'קפיץ מתוח', 'סקטור (בסיס)', 'אינדיקטור מקדים (Lead)', 'זמן ועונתיות', 'סנטימנט מאקרו']]
+
+    def style_matrix(row):
+        styles = [''] * len(row)
+        if "🎯🎯🎯" in str(row['אינדיקטור מקדים (Lead)']):
+            if "לונג" in str(row['קפיץ מתוח']): return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+            elif "שורט" in str(row['קפיץ מתוח']): return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+        return styles
+
+    st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+
+time.sleep(15)
+st.rerun()
