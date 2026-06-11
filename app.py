@@ -54,14 +54,11 @@ st.markdown("""
     .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
     @keyframes blinker { 50% { opacity: 0; } }
     
-    /* --- נשק יום הדין לחיסול העמעום --- */
-    /* פוקד על כל האלמנטים במסך לשמור על 100% אטימות, מתעלם מפקודות סטרימליט בזמן טעינה */
+    /* מניעת שקיפות נתונים בלבד מבלי לפגוע ברקע השחור המקורי */
     .stApp *:not(.blink) {
         opacity: 1 !important;
         transition: none !important;
     }
-    
-    /* העלמת הספינר הקופצני בפינה */
     div[data-testid="stStatusWidget"] {
         opacity: 0 !important;
         display: none !important;
@@ -357,7 +354,7 @@ col_mac4.metric("📅 סטטוס קלנדרי", cal_status, "חלון מוסדי
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
 
-# הוסרו המירכאות מתוך הערכים 'טכנולוגיה' ו-'נדלן' למניעת שגיאת קוד במערכת
+# מילון הסקטורים המורחב: כולל את כל סקטורי ה-XL, ואת תחומי הנישה המבוקשים
 matrix_sectors = {
     'QQQ': {'name': 'טכנולוגיה', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
     'SOXX': {'name': 'שבבים (SOXX)', 'long_3x': 'SOXL', 'short_3x': 'SOXS', 'base_weight': -15 if erp_stress > 0.25 else 0},
@@ -365,7 +362,20 @@ matrix_sectors = {
     'IWM': {'name': 'ראסל 2000 (IWM)', 'long_3x': 'TNA', 'short_3x': 'TZA', 'base_weight': -15 if tnx_val > 4.2 else 0},
     'XLE': {'name': 'אנרגיה (XLE)', 'long_3x': 'ERX', 'short_3x': 'ERY', 'base_weight': 15 if "Backwardation" in term_structure else 0},
     'XLRE': {'name': 'נדלן (XLRE)', 'long_3x': 'DRN', 'short_3x': 'DRV', 'base_weight': -20 if tnx_val > 4.2 else 0},
-    'XBI': {'name': 'ביוטק (XBI)', 'long_3x': 'LABU', 'short_3x': 'LABD', 'base_weight': 0}
+    'XBI': {'name': 'ביוטק (XBI)', 'long_3x': 'LABU', 'short_3x': 'LABD', 'base_weight': 0},
+    
+    # --- הוספת סקטורי XL חסרים ---
+    'XLV': {'name': 'בריאות (XLV)', 'long_3x': 'CURE', 'short_3x': 'RXD', 'base_weight': 10 if erp_stress > 0.25 else 0},
+    'XLU': {'name': 'תשתיות (XLU)', 'long_3x': 'UTSL', 'short_3x': 'XLU', 'base_weight': 15 if erp_stress > 0.25 else 0},
+    'XLI': {'name': 'תעשייה (XLI)', 'long_3x': 'DUSL', 'short_3x': 'XLI', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'XLY': {'name': 'צריכה מחזורית (XLY)', 'long_3x': 'WANT', 'short_3x': 'XLY', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'XLP': {'name': 'צריכה בסיסית (XLP)', 'long_3x': 'NEED', 'short_3x': 'XLP', 'base_weight': 10 if erp_stress > 0.25 else 0},
+    'XLB': {'name': 'חומרי גלם (XLB)', 'long_3x': 'XLB', 'short_3x': 'XLB', 'base_weight': 0},
+    
+    # --- הוספת נושאי נישה שביקשת (אין להם תעודות ממונפות פי 3 אז משתמשים בתעודת המקור) ---
+    'URA': {'name': 'גרעין (URA)', 'long_3x': 'URA', 'short_3x': 'URA', 'base_weight': 10 if "Backwardation" in term_structure else 0},
+    'QTUM': {'name': 'קוואנטום (QTUM)', 'long_3x': 'QTUM', 'short_3x': 'QTUM', 'base_weight': -5 if erp_stress > 0.25 else 0},
+    'ARKX': {'name': 'חלל (ARKX)', 'long_3x': 'ARKX', 'short_3x': 'ARKX', 'base_weight': -5 if erp_stress > 0.25 else 0}
 }
 
 matrix_table_data = []
@@ -396,27 +406,26 @@ for ticker, info in matrix_sectors.items():
             if hurst_spy < 0.5: confluence_score *= 1.5 
             if is_gann_window: confluence_score *= 1.2
             
+            # --- לוגיקת אינדיקטור מקדים (מוח מאקרו משודרג לזיהוי הגנות לעומת שוק עולה) ---
             lead_reason = ""
             is_macro_aligned = False
             
-            if ticker == 'XLF' and tnx_val > 4.2: 
-                lead_reason = "TNX זינוק"
-                is_macro_aligned = (confluence_score > 0)
+            if ticker in ['XLF'] and tnx_val > 4.2: 
+                lead_reason, is_macro_aligned = "TNX זינוק", (confluence_score > 0)
             elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
-                lead_reason = "TNX לחץ"
-                is_macro_aligned = (confluence_score < 0)
-            elif ticker == 'XLE' and "Backwardation" in term_structure: 
-                lead_reason = "נפט ב-Backwardation"
-                is_macro_aligned = (confluence_score > 0)
-            elif ticker in ['QQQ', 'SOXX'] and erp_stress < 0.25: 
-                lead_reason = "VIX בשפל"
-                is_macro_aligned = (confluence_score > 0)
-            elif ticker in ['QQQ', 'SOXX'] and erp_stress > 0.25: 
-                lead_reason = "ERP זינוק"
-                is_macro_aligned = (confluence_score < 0)
+                lead_reason, is_macro_aligned = "TNX לחץ", (confluence_score < 0)
+            elif ticker in ['XLE', 'URA'] and "Backwardation" in term_structure: 
+                lead_reason, is_macro_aligned = "נפט/אנרגיה", (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress < 0.25: 
+                lead_reason, is_macro_aligned = "Risk-On (שוק)", (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress > 0.25: 
+                lead_reason, is_macro_aligned = "Risk-Off (לחץ)", (confluence_score < 0)
+            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress > 0.25:
+                lead_reason, is_macro_aligned = "הגנה מוסדית", (confluence_score > 0)
+            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress < 0.25:
+                lead_reason, is_macro_aligned = "נטישת הגנות", (confluence_score < 0)
             else: 
-                lead_reason = "זרימה פנימית"
-                is_macro_aligned = False
+                lead_reason, is_macro_aligned = "זרימה פנימית", False
 
             sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
             sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
