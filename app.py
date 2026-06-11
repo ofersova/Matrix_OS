@@ -34,6 +34,15 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
+# --- פונקציות זיכרון מטמון למניעת הבהובים מול Yahoo Finance ---
+@st.cache_data(ttl=15)
+def fetch_macro_data():
+    return yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
+
+@st.cache_data(ttl=15)
+def fetch_sector_data(ticker):
+    return yf.download(ticker, period='5d', interval='15m', auto_adjust=True, progress=False)
+
 # --- הגדרות עמוד ועיצוב מוסדי ---
 st.set_page_config(page_title="Matrix OS V6", layout="wide", page_icon="⚡")
 
@@ -45,23 +54,23 @@ st.markdown("""
     .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
     @keyframes blinker { 50% { opacity: 0; } }
     
-    /* ביטול אפקט השקיפות (Dimming) המעיק בזמן הרענון האוטומטי */
-    div[data-testid="stAppViewContainer"] > div:first-child,
-    div[data-testid="stAppViewBlockContainer"], 
-    div[data-testid="stVerticalBlock"],
-    .stApp {
+    /* מניעת שקיפות/הבהוב באופן כירורגי מבלי לפגוע ברקע המקורי */
+    [data-testid="stAppViewBlockContainer"], 
+    [data-testid="stVerticalBlock"], 
+    [data-testid="stDataFrame"] {
         opacity: 1 !important;
-        filter: none !important;
         transition: none !important;
+    }
+    div[data-testid="stStatusWidget"] {
+        display: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# הגדרת זמן המערכת שכנראה נדרסה בטעות מקודם
 now_dt = datetime.now()
 
 st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
-st.write(f"🔄 מתעדכן חי (כל 15 שניות) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.write(f"🔄 מתעדכן חי (ללא הבהוב) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
@@ -238,74 +247,12 @@ if sec_data:
 
 st.markdown("---")
 
-# --- לוח אירועים כלכליים דינמי ---
-st.subheader("📅 יומן אירועי קצה - מאקרו בזמן אמת")
-today_date = now_dt.date()
-tomorrow_date = today_date + timedelta(days=1)
-
-all_events = [
-    {"תאריך": today_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "CPI מדד המחירים לצרכן", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02", "is_lower_better": True},
-    {"תאריך": today_date, "שעה": "10:30 AM", "עוצמה": "🟠", "אירוע": "EIA Crude Oil Stocks Change", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M", "is_lower_better": False},
-    {"תאריך": tomorrow_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "Core PPI MoM", "תקופה": "May", "בפועל": "--", "צפי": "0.2%", "קודם": "0.1%", "is_lower_better": True},
-    {"תאריך": tomorrow_date, "שעה": "02:30 PM", "עוצמה": "🟠", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "בפועל": "--", "צפי": "215K", "קודם": "220K", "is_lower_better": True}
-]
-
-filtered_events = []
-is_quiet_hours = (now_dt.weekday() == 4 and now_dt.hour >= 18) or (now_dt.weekday() == 5 and now_dt.hour < 21)
-
-for ev in all_events:
-    if ev["תאריך"] == today_date: day_label = "Today"
-    elif ev["תאריך"] == tomorrow_date: day_label = "Tomorrow"
-    else: continue 
-        
-    is_approaching = False
-    try:
-        time_clean = ev["שעה"].replace(" AM", "").replace(" PM", "")
-        ev_hour, ev_min = map(int, time_clean.split(":"))
-        if "PM" in ev["שעה"] and ev_hour != 12: ev_hour += 12
-        elif "AM" in ev["שעה"] and ev_hour == 12: ev_hour = 0
-            
-        ev_datetime = now_dt.replace(year=ev["תאריך"].year, month=ev["תאריך"].month, day=ev["תאריך"].day, hour=ev_hour, minute=ev_min, second=0, microsecond=0)
-        time_difference = ev_datetime - now_dt
-        if ev["תאריך"] == today_date and timedelta(minutes=0) <= time_difference <= timedelta(minutes=30):
-            if not is_quiet_hours: is_approaching = True
-    except: pass
-
-    filtered_events.append({
-        "Date": day_label, "Time": ev["שעה"], "Impact": ev["עוצמה"],
-        "Event": f"🚨 {ev['אירוע']}" if is_approaching else ev["אירוע"],
-        "For": ev["תקופה"], "Actual": ev["בפועל"], "Expected": ev["צפי"], "Prior": ev["קודם"],
-        "התרעה": is_approaching, "is_lower_better": ev["is_lower_better"]
-    })
-
-if filtered_events:
-    df_cal = pd.DataFrame(filtered_events)
-    def style_table(row):
-        styles = [''] * len(row)
-        idx_actual = row.index.get_loc('Actual')
-        if row['התרעה']: styles = ['background-color: rgba(255, 165, 0, 0.2); border-bottom: 1px solid orange;'] * len(row)
-        try:
-            if row['Actual'] != '--' and row['Expected'] != '--':
-                val_actual = float(str(row['Actual']).replace('%', '').replace('M', '').replace('K', '').strip())
-                val_expected = float(str(row['Expected']).replace('%', '').replace('M', '').replace('K', '').strip())
-                if val_actual != val_expected:
-                    is_green = (val_actual < val_expected) if row['is_lower_better'] else (val_actual > val_expected)
-                    color = '#00ff00' if is_green else '#ff4b4b'
-                    styles[idx_actual] = styles[idx_actual] + f'color: {color}; font-weight: bold;'
-        except: pass
-        return styles
-
-    st.dataframe(df_cal.style.apply(style_table, axis=1), use_container_width=True, hide_index=True, column_config={"התרעה": None, "is_lower_better": None})
-else:
-    st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
-
-st.markdown("---")
-
 # --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
 st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
 
 try:
-    hist_market = yf.download(['SPY', '^VIX', '^TNX', 'CL=F'], period='45d', interval='1d', auto_adjust=True, progress=False)
+    # שימוש בפונקציית המטמון המהירה
+    hist_market = fetch_macro_data()
     if isinstance(hist_market.columns, pd.MultiIndex):
         hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
     
@@ -321,12 +268,11 @@ except:
     hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
     term_structure = "ניטרלי"
 
-# חישוב עונתיות אסטרו-פיננסית ולוח שנה מוסדי (TOM / Pre-TOM / Gann)
 current_day = now_dt.day
 current_month = now_dt.month
 
 is_tom_active = True if current_day >= 26 or current_day <= 4 else False
-is_pre_tom_active = True if 15 <= current_day <= 22 else False # משיכת נזילות לפני סוף חודש
+is_pre_tom_active = True if 15 <= current_day <= 22 else False
 is_gann_window = True if (20 <= current_day <= 23) and (current_month in [3, 6, 9, 12]) else False
 
 tom_color = "normal" if is_tom_active else "off"
@@ -361,7 +307,8 @@ matrix_table_data = []
 
 for ticker, info in matrix_sectors.items():
     try:
-        df_sector = yf.download(ticker, period='5d', interval='15m', auto_adjust=True, progress=False)
+        # שימוש בפונקציית המטמון המהירה
+        df_sector = fetch_sector_data(ticker)
         if not df_sector.empty:
             if isinstance(df_sector.columns, pd.MultiIndex):
                 df_sector.columns = [col[0] for col in df_sector.columns]
@@ -370,7 +317,6 @@ for ticker, info in matrix_sectors.items():
             last_row = df_sector.iloc[-1]
             rsi = float(last_row['RSI'])
             
-            # 1. חישוב המשקלים הגולמיים לכל עמודה
             base_w = info['base_weight']
             rsi_w = 50.0 - rsi
             
@@ -380,14 +326,12 @@ for ticker, info in matrix_sectors.items():
             
             confluence_score = base_w + rsi_w + cal_w
             
-            # מכפילים אסטרטגיים
             hurst_mult_str = "x1.5" if hurst_spy < 0.5 else "x1.0"
             gann_mult_str = "x1.2" if is_gann_window else "x1.0"
             
             if hurst_spy < 0.5: confluence_score *= 1.5 
             if is_gann_window: confluence_score *= 1.2
             
-            # 2. לוגיקת אינדיקטור מקדים (Lead)
             lead_reason = ""
             is_macro_aligned = False
             
@@ -410,7 +354,6 @@ for ticker, info in matrix_sectors.items():
                 lead_reason = "זרימה פנימית"
                 is_macro_aligned = False
 
-            # 3. הדלקת סמלים רק כשיש תנאי שמצדיק אותם
             sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
             sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
             sym_gann = "⏳" if is_gann_window else "➖"
@@ -420,7 +363,6 @@ for ticker, info in matrix_sectors.items():
             
             sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_lead} {sym_macro}"
             
-            # ביצוע הדק וטקסטים
             if confluence_score > 25:
                 status_text = f"🟢 +{confluence_score:.1f} (לונג)"
                 trigger_text = f"{info['long_3x']}"
