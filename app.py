@@ -61,13 +61,18 @@ st.markdown("""
     .red-text { color: #ff0000; font-weight: bold; font-size: 16px; }
     .blink { animation: blinker 1.5s linear infinite; color: #ffcc00; font-weight: bold; }
     @keyframes blinker { 50% { opacity: 0; } }
+    
+    /* ביטול אפקט השקיפות (Dimming) המעיק בזמן הרענון האוטומטי */
+    div[data-testid="stAppViewContainer"] > div:first-child,
+    div[data-testid="stAppViewBlockContainer"], 
+    div[data-testid="stVerticalBlock"],
+    .stApp {
+        opacity: 1 !important;
+        filter: none !important;
+        transition: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
-
-now_dt = datetime.now()
-st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
-st.write(f"🔄 מתעדכן חי (כל 15 שניות) | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
-st.markdown("---")
 
 # --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
 assets = {
