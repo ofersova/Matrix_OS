@@ -172,18 +172,18 @@ with col_m1:
         
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # --- התיקון של CNN שעוקף חסימות ---
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+        # --- כאן בוצע התיקון לזהות דפדפן מלאה ---
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        r = requests.get(url, headers=headers, timeout=5)
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
             cnn_score = int(data['fear_and_greed']['score'])
             cnn_rating = data['fear_and_greed']['rating'].capitalize()
             st.metric("CNN Fear & Greed", f"{cnn_score} / 100", cnn_rating, delta_color="off")
         else:
-            st.metric("CNN Fear & Greed", "--", "שגיאת חיבור")
+            st.metric("CNN Fear & Greed", "--", "שגיאת חיבור (חסום)")
     except:
         st.metric("CNN Fear & Greed", "--", "שגיאת רשת")
 
@@ -296,4 +296,205 @@ if filtered_events:
         try:
             if row['Actual'] != '--' and row['Expected'] != '--':
                 val_actual = float(str(row['Actual']).replace('%', '').replace('M', '').replace('K', '').strip())
-                val_expected = float(str(row['Expected']).replace('%', '').replace('M', '').replace
+                val_expected = float(str(row['Expected']).replace('%', '').replace('M', '').replace('K', '').strip())
+                if val_actual != val_expected:
+                    is_green = (val_actual < val_expected) if row['is_lower_better'] else (val_actual > val_expected)
+                    color = '#00ff00' if is_green else '#ff4b4b'
+                    styles[idx_actual] = styles[idx_actual] + f'color: {color}; font-weight: bold;'
+        except: pass
+        return styles
+
+    st.dataframe(df_cal.style.apply(style_table, axis=1), use_container_width=True, hide_index=True, column_config={"התרעה": None, "is_lower_better": None})
+else:
+    st.info("אין אירועי מאקרו מתוכננים להיום או למחר.")
+
+st.markdown("---")
+
+# --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
+st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
+
+try:
+    hist_market = fetch_macro_data()
+    if isinstance(hist_market.columns, pd.MultiIndex):
+        hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
+    
+    spy_closes = hist_market['Close_SPY'].dropna().values
+    vix_val = float(hist_market['Close_^VIX'].dropna().iloc[-1])
+    tnx_val = float(hist_market['Close_^TNX'].dropna().iloc[-1])
+    oil_price = float(hist_market['Close_CL=F'].dropna().iloc[-1])
+    
+    hurst_spy = calculate_hurst(spy_closes)
+    erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
+    term_structure = "Backwardation" if oil_price > 80 else "Contango"
+except:
+    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
+    term_structure = "ניטרלי"
+
+current_day = now_dt.day
+current_month = now_dt.month
+
+is_tom_active = True if current_day >= 26 or current_day <= 4 else False
+is_pre_tom_active = True if 15 <= current_day <= 22 else False 
+is_gann_window = True if (20 <= current_day <= 23) and (current_month in [3, 6, 9, 12]) else False
+
+tom_color = "normal" if is_tom_active else "off"
+
+col_mac1, col_mac2, col_mac3, col_mac4 = st.columns(4)
+col_mac1.metric("📉 משטר שוק (Hurst)", f"{hurst_spy:.2f}", "מגמתי שורי (H > 0.5)" if hurst_spy > 0.5 else "שוק דשדוש", delta_color="normal" if hurst_spy > 0.5 else "inverse")
+col_mac2.metric("🛢️ עקום הנפט (WTI)", f"{oil_price:.2f}$", f"{term_structure} (הגנת לונג)", delta_color="normal" if "Backwardation" in term_structure else "inverse")
+col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", f"{erp_stress:.2f}", "שוק רגוע (Risk-On)" if erp_stress < 0.25 else "שוק בסיכון", delta_color="inverse")
+
+if is_tom_active:
+    cal_status = "TOM פעיל"
+elif is_pre_tom_active:
+    cal_status = "Pre-TOM משיכות"
+else:
+    cal_status = "שגרה"
+col_mac4.metric("📅 סטטוס קלנדרי", cal_status, "חלון מוסדי פעיל" if cal_status != "שגרה" else "", delta_color=tom_color)
+
+st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
+st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
+
+matrix_sectors = {
+    'QQQ': {'name': 'טכנולוגיה', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'SOXX': {'name': 'שבבים (SOXX)', 'long_3x': 'SOXL', 'short_3x': 'SOXS', 'base_weight': -15 if erp_stress > 0.25 else 0},
+    'XLF': {'name': 'פיננסים (XLF)', 'long_3x': 'FAS', 'short_3x': 'FAZ', 'base_weight': 10 if tnx_val > 4.2 else 0},
+    'IWM': {'name': 'ראסל 2000 (IWM)', 'long_3x': 'TNA', 'short_3x': 'TZA', 'base_weight': -15 if tnx_val > 4.2 else 0},
+    'XLE': {'name': 'אנרגיה (XLE)', 'long_3x': 'ERX', 'short_3x': 'ERY', 'base_weight': 15 if "Backwardation" in term_structure else 0},
+    'XLRE': {'name': 'נדלן (XLRE)', 'long_3x': 'DRN', 'short_3x': 'DRV', 'base_weight': -20 if tnx_val > 4.2 else 0},
+    'XBI': {'name': 'ביוטק (XBI)', 'long_3x': 'LABU', 'short_3x': 'LABD', 'base_weight': 0},
+    'XLV': {'name': 'בריאות (XLV)', 'long_3x': 'CURE', 'short_3x': 'RXD', 'base_weight': 10 if erp_stress > 0.25 else 0},
+    'XLU': {'name': 'תשתיות (XLU)', 'long_3x': 'UTSL', 'short_3x': 'XLU', 'base_weight': 15 if erp_stress > 0.25 else 0},
+    'XLI': {'name': 'תעשייה (XLI)', 'long_3x': 'DUSL', 'short_3x': 'XLI', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'XLY': {'name': 'צריכה מחזורית (XLY)', 'long_3x': 'WANT', 'short_3x': 'XLY', 'base_weight': -10 if erp_stress > 0.25 else 0},
+    'XLP': {'name': 'צריכה בסיסית (XLP)', 'long_3x': 'NEED', 'short_3x': 'XLP', 'base_weight': 10 if erp_stress > 0.25 else 0},
+    'XLB': {'name': 'חומרי גלם (XLB)', 'long_3x': 'XLB', 'short_3x': 'XLB', 'base_weight': 0},
+    'URA': {'name': 'גרעין (URA)', 'long_3x': 'URA', 'short_3x': 'URA', 'base_weight': 10 if "Backwardation" in term_structure else 0},
+    'QTUM': {'name': 'קוואנטום (QTUM)', 'long_3x': 'QTUM', 'short_3x': 'QTUM', 'base_weight': -5 if erp_stress > 0.25 else 0},
+    'ARKX': {'name': 'חלל (ARKX)', 'long_3x': 'ARKX', 'short_3x': 'ARKX', 'base_weight': -5 if erp_stress > 0.25 else 0}
+}
+
+matrix_table_data = []
+
+for ticker, info in matrix_sectors.items():
+    try:
+        df_sector = fetch_sector_data(ticker)
+        if not df_sector.empty:
+            if isinstance(df_sector.columns, pd.MultiIndex):
+                df_sector.columns = [col[0] for col in df_sector.columns]
+                
+            df_sector['RSI'] = calculate_rsi(df_sector)
+            last_row = df_sector.iloc[-1]
+            rsi = float(last_row['RSI'])
+            
+            base_w = info['base_weight']
+            rsi_w = 50.0 - rsi
+            
+            cal_w = 0
+            if is_tom_active: cal_w = 25
+            elif is_pre_tom_active: cal_w = -25
+            
+            confluence_score = base_w + rsi_w + cal_w
+            
+            hurst_mult_str = "x1.5" if hurst_spy < 0.5 else "x1.0"
+            gann_mult_str = "x1.2" if is_gann_window else "x1.0"
+            
+            if hurst_spy < 0.5: confluence_score *= 1.5 
+            if is_gann_window: confluence_score *= 1.2
+            
+            lead_reason = ""
+            is_macro_aligned = False
+            
+            if ticker in ['XLF'] and tnx_val > 4.2: 
+                lead_reason, is_macro_aligned = "TNX זינוק", (confluence_score > 0)
+            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
+                lead_reason, is_macro_aligned = "TNX לחץ", (confluence_score < 0)
+            elif ticker in ['XLE', 'URA'] and "Backwardation" in term_structure: 
+                lead_reason, is_macro_aligned = "נפט/אנרגיה", (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress < 0.25: 
+                lead_reason, is_macro_aligned = "Risk-On (שוק)", (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress > 0.25: 
+                lead_reason, is_macro_aligned = "Risk-Off (לחץ)", (confluence_score < 0)
+            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress > 0.25:
+                lead_reason, is_macro_aligned = "הגנה מוסדית", (confluence_score > 0)
+            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress < 0.25:
+                lead_reason, is_macro_aligned = "נטישת הגנות", (confluence_score < 0)
+            else: 
+                lead_reason, is_macro_aligned = "זרימה פנימית", False
+
+            sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
+            sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
+            sym_gann = "⏳" if is_gann_window else "➖"
+            sym_tom = "📅" if cal_w != 0 else "➖"
+            sym_lead = "🧭" if is_macro_aligned else "➖"
+            sym_macro = "🌍" if base_w != 0 else "➖"
+            
+            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_lead} {sym_macro}"
+            
+            if confluence_score > 25:
+                status_text = f"🟢 +{confluence_score:.1f} (לונג)"
+                trigger_text = f"{info['long_3x']}"
+            elif confluence_score < -25:
+                status_text = f"🔴 {confluence_score:.1f} (שורט)"
+                trigger_text = f"{info['short_3x']}"
+            elif confluence_score > 10:
+                status_text = f"⚪ +{confluence_score:.1f}"
+                trigger_text = "--"
+            elif confluence_score < -10:
+                status_text = f"⚪ {confluence_score:.1f}"
+                trigger_text = "--"
+            else:
+                status_text = f"⚪ {confluence_score:.1f}"
+                trigger_text = "--"
+
+            matrix_table_data.append({
+                "פאנל חיווי": sym_panel,
+                "הדק\n(ביצוע)": trigger_text,
+                "סקטור\n(בסיס)": info['name'],
+                "קפיץ\nמשוקלל": status_text,
+                "🔥 (RSI)\nמתיחת מיקרו": f"{rsi_w:+.1f}",
+                "📉 (Hurst)\nמכפיל הגנה": hurst_mult_str,
+                "⏳ (Gann)\nתזמון": gann_mult_str,
+                "📅 (TOM)\nעונתיות": f"{cal_w:+d}",
+                "🧭 (Lead)\nאיתות": lead_reason,
+                "🌍 (Macro)\nמשקל": f"{base_w:+d}",
+                "score": confluence_score
+            })
+    except: pass
+
+if matrix_table_data:
+    df_matrix = pd.DataFrame(matrix_table_data)
+    df_matrix['abs_score'] = df_matrix['score'].abs()
+    df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
+    
+    df_matrix = df_matrix[[
+        'פאנל חיווי',
+        'הדק\n(ביצוע)',
+        'סקטור\n(בסיס)',
+        'קפיץ\nמשוקלל',
+        '🔥 (RSI)\nמתיחת מיקרו',
+        '📉 (Hurst)\nמכפיל הגנה',
+        '⏳ (Gann)\nתזמון',
+        '📅 (TOM)\nעונתיות',
+        '🧭 (Lead)\nאיתות',
+        '🌍 (Macro)\nמשקל'
+    ]]
+
+    def style_matrix(row):
+        styles = [''] * len(row)
+        score_val = str(row['קפיץ\nמשוקלל'])
+        sym_panel = str(row['פאנל חיווי'])
+        
+        active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
+        
+        if active_symbols >= 3:
+            if "לונג" in score_val: 
+                return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+            elif "שורט" in score_val: 
+                return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+        return styles
+
+    st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+
+time.sleep(15)
+st.rerun()
