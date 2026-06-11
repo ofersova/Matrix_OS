@@ -327,17 +327,31 @@ except:
     hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
     term_structure = "ניטרלי"
 
-is_tom_active = is_tom_window()
+# חישוב עונתיות אסטרו-פיננסית ולוח שנה מוסדי (TOM / Pre-TOM / Gann)
+current_day = now_dt.day
+current_month = now_dt.month
+
+is_tom_active = True if current_day >= 26 or current_day <= 4 else False
+is_pre_tom_active = True if 15 <= current_day <= 22 else False # משיכת נזילות לפני סוף חודש
+is_gann_window = True if (20 <= current_day <= 23) and (current_month in [3, 6, 9, 12]) else False
+
 tom_color = "normal" if is_tom_active else "off"
 
 col_mac1, col_mac2, col_mac3, col_mac4 = st.columns(4)
 col_mac1.metric("📉 משטר שוק (Hurst)", f"{hurst_spy:.2f}", "מגמתי שורי (H > 0.5)" if hurst_spy > 0.5 else "שוק דשדוש", delta_color="normal" if hurst_spy > 0.5 else "inverse")
 col_mac2.metric("🛢️ עקום הנפט (WTI)", f"{oil_price:.2f}$", f"{term_structure} (הגנת לונג)", delta_color="normal" if "Backwardation" in term_structure else "inverse")
 col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", f"{erp_stress:.2f}", "שוק רגוע (Risk-On)" if erp_stress < 0.25 else "שוק בסיכון", delta_color="inverse")
-col_mac4.metric("📅 סטטוס קלנדרי (TOM)", "פעיל" if is_tom_active else "שגרה", "לחץ קניות מוסדי" if is_tom_active else "", delta_color=tom_color)
+
+if is_tom_active:
+    cal_status = "TOM פעיל"
+elif is_pre_tom_active:
+    cal_status = "Pre-TOM משיכות"
+else:
+    cal_status = "שגרה"
+col_mac4.metric("📅 סטטוס קלנדרי", cal_status, "חלון מוסדי פעיל" if cal_status != "שגרה" else "", delta_color=tom_color)
 
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
-st.subheader("🎯 טבלת צלפים: סנכרון רב-ממדי ומקדמי השפעה (Live Matrix Breakdown)")
+st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 7-Pillar Confluence)")
 
 matrix_sectors = {
     'QQQ': {'name': 'טכנולוגיה ונאסד"ק', 'long_3x': 'TQQQ', 'short_3x': 'SQQQ', 'base_weight': -10 if erp_stress > 0.25 else 0},
@@ -362,50 +376,56 @@ for ticker, info in matrix_sectors.items():
             last_row = df_sector.iloc[-1]
             rsi = float(last_row['RSI'])
             
-            # חישוב המרכיבים הגולמיים
+            # 1. חישוב המשקלים הגולמיים
             base_w = info['base_weight']
             rsi_w = 50.0 - rsi
-            cal_w = 25 if is_tom_active else 0
+            
+            cal_w = 0
+            if is_tom_active: cal_w = 25
+            elif is_pre_tom_active: cal_w = -25
             
             confluence_score = base_w + rsi_w + cal_w
-            hurst_mult = "x1.5" if hurst_spy < 0.5 else "x1.0"
-            if hurst_spy < 0.5: 
-                confluence_score *= 1.5 
             
-            # --- לוגיקת Lead-Lag מבוססת מאקרו ---
+            # מכפילים אסטרטגיים
+            hurst_mult = "x1.5" if hurst_spy < 0.5 else "x1.0"
+            if hurst_spy < 0.5: confluence_score *= 1.5 
+            if is_gann_window: confluence_score *= 1.2
+            
+            # 2. לוגיקת Lead-Lag מבוססת מאקרו
             lead_reason = ""
             is_macro_aligned = False
             
             if ticker == 'XLF' and tnx_val > 4.2: 
-                lead_reason = "זינוק TNX תשואות"
+                lead_reason = "TNX זינוק"
                 is_macro_aligned = (confluence_score > 0)
             elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
-                lead_reason = "לחץ תשואות TNX"
+                lead_reason = "TNX לחץ"
                 is_macro_aligned = (confluence_score < 0)
             elif ticker == 'XLE' and "Backwardation" in term_structure: 
-                lead_reason = "נפט ב-Backwardation"
+                lead_reason = "נפט מוגן"
                 is_macro_aligned = (confluence_score > 0)
             elif ticker in ['QQQ', 'SOXX'] and erp_stress < 0.25: 
-                lead_reason = "מדד פחד (VIX) בשפל"
+                lead_reason = "VIX בשפל"
                 is_macro_aligned = (confluence_score > 0)
             elif ticker in ['QQQ', 'SOXX'] and erp_stress > 0.25: 
-                lead_reason = "זינוק בערוץ הלחץ (ERP)"
+                lead_reason = "ERP זינוק"
                 is_macro_aligned = (confluence_score < 0)
             else: 
-                lead_reason = "זרימת הון פנימית"
+                lead_reason = "זרימה פנימית"
                 is_macro_aligned = False
 
-            # --- מנגנון המטרות הדינמי החדש (ציון לפי פרמטרי קיצון) ---
-            target_count = 0
-            if is_macro_aligned or base_w != 0: target_count += 1  # 1. תמיכת מאקרו
-            if abs(rsi_w) > 10: target_count += 1                  # 2. מתיחת RSI משמעותית
-            if abs(rsi_w) > 20: target_count += 1                  # 3. מתיחת RSI פאניקה קיצונית
-            if cal_w > 0: target_count += 1                        # 4. חלון TOM מזרים הון
-            if hurst_spy < 0.5: target_count += 1                  # 5. הגנת הרסט לשוק דשדוש
+            # 3. מנוע 7 הסמלים הקשיח (Confluence Bar) - מאקרו -> לוח שנה -> מיקרו
+            sym_1 = "🌍" if base_w != 0 else "➖"                                       # סביבת מאקרו
+            sym_2 = "🧭" if is_macro_aligned else "➖"                                # כיוון אינדיקטור מקדים
+            sym_3 = "📅" if (cal_w > 0 and confluence_score > 0) or (cal_w < 0 and confluence_score < 0) else "➖" # תמיכת עונתיות
+            sym_4 = "⏳" if is_gann_window else "➖"                                  # תאריך היפוך גאן
+            sym_5 = "📉" if hurst_spy < 0.5 else "➖"                                 # הגנת דשדוש (הרסט)
+            sym_6 = "🏹" if abs(rsi_w) > 10 else "➖"                                 # מתיחת מיקרו ראשונית
+            sym_7 = "🔥" if abs(rsi_w) > 20 else "➖"                                 # מתיחת מיקרו (פאניקה)
             
-            target_str = "🎯" * target_count if target_count > 0 else ""
-            lead_text = f"{target_str} ({lead_reason})" if target_str else f"-- ({lead_reason})"
+            lead_symbols = f"{sym_1}{sym_2}{sym_3}{sym_4}{sym_5}{sym_6}{sym_7}"
             
+            # ביצוע הדק וטקסטים
             if confluence_score > 25:
                 status_text = f"🟢 +{confluence_score:.1f} (לונג)"
                 trigger_text = f"{info['long_3x']}"
@@ -423,13 +443,14 @@ for ticker, info in matrix_sectors.items():
                 trigger_text = "--"
 
             matrix_table_data.append({
+                "פאנל סמלים 1-7": lead_symbols,
+                "סיבת תנועה (Lead)": lead_reason,
                 "הדק (ביצוע)": trigger_text,
                 "קפיץ משוקלל": status_text,
                 "סקטור (בסיס)": info['name'],
                 "מכפיל הרסט": hurst_mult,
                 "מתיחת מיקרו (RSI)": f"{rsi_w:+.1f}",
-                "משקל קלנדרי (TOM)": f"+{cal_w}" if cal_w > 0 else "0",
-                "אינדיקטור מקדים (Lead)": lead_text,
+                "משקל קלנדרי (TOM)": f"{cal_w:+d}",
                 "משקל בסיס (מאקרו)": f"{base_w:+d}",
                 "score": confluence_score
             })
@@ -440,27 +461,31 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
-    # --- סידור העמודות בדיוק לפי הציור: משמאל קיצוני (מטרות) עד ימין קיצוני (מאקרו) ---
+    # סידור העמודות החדש: פאנל סמלים והדק בצד שמאל קיצוני, זורם ימינה עד למאקרו
     df_matrix = df_matrix[[
-        'משקל בסיס (מאקרו)',       # ימין קיצוני
+        'פאנל סמלים 1-7',        # שמאל קיצוני 1
+        'הדק (ביצוע)',           # שמאל 2
+        'סקטור (בסיס)',          # שמאל 3
+        'קפיץ משוקלל',           # שמאל 4
+        'מתיחת מיקרו (RSI)',     # שמאל 5
+        'סיבת תנועה (Lead)',
+        'מכפיל הרסט',
         'משקל קלנדרי (TOM)',     
-        'מכפיל הרסט',            
-        'מתיחת מיקרו (RSI)',     # מס' 5 משמאל (כמו בציור)
-        'קפיץ משוקלל',           # מס' 4 משמאל (כמו בציור)
-        'סקטור (בסיס)',          # מס' 3 משמאל (כמו בציור)
-        'הדק (ביצוע)',           # מס' 2 משמאל (כמו בציור)
-        'אינדיקטור מקדים (Lead)' # עמודה שמאלית ביותר (כמו בציור)
+        'משקל בסיס (מאקרו)'      # ימין קיצוני
     ]]
 
     def style_matrix(row):
         styles = [''] * len(row)
-        lead_str = str(row['אינדיקטור מקדים (Lead)'])
+        score_val = str(row['קפיץ משוקלל'])
+        sym_panel = str(row['פאנל סמלים 1-7'])
         
-        # צביעת שורת הביצוע המוסדית (בינגו) רק אם יש לפחות 3 מטרות שמצביעות על קיצון חזק
-        if lead_str.count("🎯") >= 3:
-            if "לונג" in str(row['קפיץ משוקלל']): 
+        # הדלקת השורה רק אם הציון חוצה רף ביצוע ואם יש לפחות 3 סמלים דולקים
+        active_symbols = len([s for s in sym_panel if s != "➖"])
+        
+        if active_symbols >= 3:
+            if "לונג" in score_val: 
                 return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
-            elif "שורט" in str(row['קפיץ משוקלל']): 
+            elif "שורט" in score_val: 
                 return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
         return styles
 
