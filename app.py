@@ -372,7 +372,7 @@ for ticker, info in matrix_sectors.items():
             if hurst_spy < 0.5: 
                 confluence_score *= 1.5 
             
-            # --- לוגיקת מטרות קפדנית ואמיתית (Lead-Lag) ---
+            # --- לוגיקת Lead-Lag מבוססת מאקרו ---
             lead_reason = ""
             is_macro_aligned = False
             
@@ -395,17 +395,14 @@ for ticker, info in matrix_sectors.items():
                 lead_reason = "זרימת הון פנימית"
                 is_macro_aligned = False
 
-            # ספירת מטרות חכמה - רק סנכרון מאקרו מאפשר לקבל חצים
+            # --- מנגנון המטרות הדינמי החדש (ציון לפי פרמטרי קיצון) ---
             target_count = 0
-            if is_macro_aligned or base_w != 0: target_count += 1
-            if abs(rsi_w) > 10: target_count += 1
+            if is_macro_aligned or base_w != 0: target_count += 1  # 1. תמיכת מאקרו
+            if abs(rsi_w) > 10: target_count += 1                  # 2. מתיחת RSI משמעותית
+            if abs(rsi_w) > 20: target_count += 1                  # 3. מתיחת RSI פאניקה קיצונית
+            if cal_w > 0: target_count += 1                        # 4. חלון TOM מזרים הון
+            if hurst_spy < 0.5: target_count += 1                  # 5. הגנת הרסט לשוק דשדוש
             
-            # בינגו (3 חצים) יתקבל אך ורק אם יש סנכרון מאקרו יחד עם ציון קיצון
-            if abs(confluence_score) > 25 and is_macro_aligned: 
-                target_count = 3
-            elif abs(confluence_score) > 25: 
-                target_count = max(target_count, 2)
-
             target_str = "🎯" * target_count if target_count > 0 else ""
             lead_text = f"{target_str} ({lead_reason})" if target_str else f"-- ({lead_reason})"
             
@@ -443,21 +440,24 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
-    # סידור עמודות מושלם: ביצוע משמאל קיצוני, זורם ימינה עד למאקרו
+    # --- סידור העמודות בדיוק לפי הציור: משמאל קיצוני (מטרות) עד ימין קיצוני (מאקרו) ---
     df_matrix = df_matrix[[
-        'הדק (ביצוע)', 
-        'קפיץ משוקלל', 
-        'סקטור (בסיס)', 
-        'מתיחת מיקרו (RSI)', 
-        'מכפיל הרסט', 
-        'משקל קלנדרי (TOM)', 
-        'אינדיקטור מקדים (Lead)', 
-        'משקל בסיס (מאקרו)'
+        'משקל בסיס (מאקרו)',       # ימין קיצוני
+        'משקל קלנדרי (TOM)',     
+        'מכפיל הרסט',            
+        'מתיחת מיקרו (RSI)',     # מס' 5 משמאל (כמו בציור)
+        'קפיץ משוקלל',           # מס' 4 משמאל (כמו בציור)
+        'סקטור (בסיס)',          # מס' 3 משמאל (כמו בציור)
+        'הדק (ביצוע)',           # מס' 2 משמאל (כמו בציור)
+        'אינדיקטור מקדים (Lead)' # עמודה שמאלית ביותר (כמו בציור)
     ]]
 
     def style_matrix(row):
         styles = [''] * len(row)
-        if "🎯🎯🎯" in str(row['אינדיקטור מקדים (Lead)']):
+        lead_str = str(row['אינדיקטור מקדים (Lead)'])
+        
+        # צביעת שורת הביצוע המוסדית (בינגו) רק אם יש לפחות 3 מטרות שמצביעות על קיצון חזק
+        if lead_str.count("🎯") >= 3:
             if "לונג" in str(row['קפיץ משוקלל']): 
                 return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
             elif "שורט" in str(row['קפיץ משוקלל']): 
