@@ -372,44 +372,68 @@ for ticker, info in matrix_sectors.items():
             if hurst_spy < 0.5: 
                 confluence_score *= 1.5 
             
+            # --- לוגיקת מטרות קפדנית ואמיתית (Lead-Lag) ---
             lead_reason = ""
-            if ticker == 'XLF' and tnx_val > 4.2: lead_reason = "תשואות TNX מזנקות"
-            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: lead_reason = "לחץ תשואות TNX"
-            elif ticker == 'XLE' and "Backwardation" in term_structure: lead_reason = "נפט ב-Backwardation"
-            elif ticker in ['QQQ', 'SOXX'] and erp_stress < 0.25: lead_reason = "מדד פחד (VIX) בשפל"
-            elif ticker in ['QQQ', 'SOXX'] and erp_stress > 0.25: lead_reason = "זינוק בערוץ הלחץ (ERP)"
-            else: lead_reason = "זרימת הון פנימית"
+            is_macro_aligned = False
+            
+            if ticker == 'XLF' and tnx_val > 4.2: 
+                lead_reason = "זינוק TNX תשואות"
+                is_macro_aligned = (confluence_score > 0)
+            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
+                lead_reason = "לחץ תשואות TNX"
+                is_macro_aligned = (confluence_score < 0)
+            elif ticker == 'XLE' and "Backwardation" in term_structure: 
+                lead_reason = "נפט ב-Backwardation"
+                is_macro_aligned = (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX'] and erp_stress < 0.25: 
+                lead_reason = "מדד פחד (VIX) בשפל"
+                is_macro_aligned = (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX'] and erp_stress > 0.25: 
+                lead_reason = "זינוק בערוץ הלחץ (ERP)"
+                is_macro_aligned = (confluence_score < 0)
+            else: 
+                lead_reason = "זרימת הון פנימית"
+                is_macro_aligned = False
+
+            # ספירת מטרות חכמה - רק סנכרון מאקרו מאפשר לקבל חצים
+            target_count = 0
+            if is_macro_aligned or base_w != 0: target_count += 1
+            if abs(rsi_w) > 10: target_count += 1
+            
+            # בינגו (3 חצים) יתקבל אך ורק אם יש סנכרון מאקרו יחד עם ציון קיצון
+            if abs(confluence_score) > 25 and is_macro_aligned: 
+                target_count = 3
+            elif abs(confluence_score) > 25: 
+                target_count = max(target_count, 2)
+
+            target_str = "🎯" * target_count if target_count > 0 else ""
+            lead_text = f"{target_str} ({lead_reason})" if target_str else f"-- ({lead_reason})"
             
             if confluence_score > 25:
                 status_text = f"🟢 +{confluence_score:.1f} (לונג)"
                 trigger_text = f"{info['long_3x']}"
-                lead_text = f"🎯🎯🎯 ({lead_reason})"
             elif confluence_score < -25:
                 status_text = f"🔴 {confluence_score:.1f} (שורט)"
                 trigger_text = f"{info['short_3x']}"
-                lead_text = f"🎯🎯🎯 ({lead_reason})"
             elif confluence_score > 10:
                 status_text = f"⚪ +{confluence_score:.1f}"
                 trigger_text = "--"
-                lead_text = f"🎯 ({lead_reason})"
             elif confluence_score < -10:
                 status_text = f"⚪ {confluence_score:.1f}"
                 trigger_text = "--"
-                lead_text = f"🎯 ({lead_reason})"
             else:
                 status_text = f"⚪ {confluence_score:.1f}"
                 trigger_text = "--"
-                lead_text = "--"
 
             matrix_table_data.append({
                 "הדק (ביצוע)": trigger_text,
                 "קפיץ משוקלל": status_text,
                 "סקטור (בסיס)": info['name'],
                 "מכפיל הרסט": hurst_mult,
-                "משקל קלנדרי (TOM)": f"+{cal_w}" if cal_w > 0 else "0",
                 "מתיחת מיקרו (RSI)": f"{rsi_w:+.1f}",
-                "משקל בסיס (מאקרו)": f"{base_w:+d}",
+                "משקל קלנדרי (TOM)": f"+{cal_w}" if cal_w > 0 else "0",
                 "אינדיקטור מקדים (Lead)": lead_text,
+                "משקל בסיס (מאקרו)": f"{base_w:+d}",
                 "score": confluence_score
             })
     except: pass
@@ -419,16 +443,16 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
-    # סידור עמודות מימין לשמאל: משתני המאקרו מימין, המיקרו באמצע, והביצוע משמאל קיצוני
+    # סידור עמודות מושלם: ביצוע משמאל קיצוני, זורם ימינה עד למאקרו
     df_matrix = df_matrix[[
-        'משקל בסיס (מאקרו)', 
-        'אינדיקטור מקדים (Lead)', 
-        'משקל קלנדרי (TOM)', 
-        'מכפיל הרסט', 
-        'מתיחת מיקרו (RSI)', 
-        'סקטור (בסיס)', 
+        'הדק (ביצוע)', 
         'קפיץ משוקלל', 
-        'הדק (ביצוע)'
+        'סקטור (בסיס)', 
+        'מתיחת מיקרו (RSI)', 
+        'מכפיל הרסט', 
+        'משקל קלנדרי (TOM)', 
+        'אינדיקטור מקדים (Lead)', 
+        'משקל בסיס (מאקרו)'
     ]]
 
     def style_matrix(row):
