@@ -321,30 +321,48 @@ term_structure = "ניטרלי"
 
 try:
     hist_market = fetch_macro_data()
-    if isinstance(hist_market.columns, pd.MultiIndex):
-        hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
     
-    # פונקציה פנימית לחילוץ בטוח גם כשיש חוסר בנתונים מהבורסה
-    def safe_extract(col_name, default_value):
-        if col_name in hist_market.columns:
-            series = hist_market[col_name].dropna()
-            if not series.empty:
-                return float(series.iloc[-1])
+    # פונקציה פנימית חסינה לחלוטין - עוקפת את מנגנון 'in' של פנדס
+    # ומנסה לגשת לכל מבני הנתונים האפשריים באופן ישיר
+    def safe_extract(ticker, default_value):
+        possible_columns = [
+            f"Close_{ticker}", f"{ticker}_Close",
+            ('Close', ticker), (ticker, 'Close'), 'Close'
+        ]
+        for col in possible_columns:
+            try:
+                series = hist_market[col].dropna()
+                if not series.empty:
+                    if isinstance(series, pd.DataFrame):
+                        series = series.iloc[:, 0]
+                    return float(series.iloc[-1])
+            except Exception:
+                continue
         return default_value
 
-    if 'Close_SPY' in hist_market.columns:
-        spy_closes = hist_market['Close_SPY'].dropna().values
-        if len(spy_closes) > 0:
-            hurst_spy = calculate_hurst(spy_closes)
+    # חילוץ בטוח עבור מדד SPY (לחישוב Hurst)
+    spy_closes = []
+    for col in ['Close_SPY', 'SPY_Close', ('Close', 'SPY'), ('SPY', 'Close'), 'Close']:
+        try:
+            s = hist_market[col].dropna()
+            if not s.empty:
+                if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
+                spy_closes = s.values
+                break
+        except Exception:
+            continue
             
-    vix_val = safe_extract('Close_^VIX', 20.0)
-    tnx_val = safe_extract('Close_^TNX', 4.0)
-    oil_price = safe_extract('Close_CL=F', 75.0)
+    if len(spy_closes) > 0:
+        hurst_spy = calculate_hurst(spy_closes)
+        
+    vix_val = safe_extract('^VIX', 20.0)
+    tnx_val = safe_extract('^TNX', 4.0)
+    oil_price = safe_extract('CL=F', 75.0)
     
     erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
     term_structure = "Backwardation" if oil_price > 80 else "Contango"
 except Exception as e:
-    pass # במקרה קיצון נמשיך עם ערכי ברירת המחדל
+    pass # במקרה קיצון נמשיך עם ערכי ברירת המחדל ללא קריסה
 
 current_day = now_dt.day
 current_month = now_dt.month
