@@ -174,6 +174,7 @@ with col_m1:
     
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+        # --- כאן בוצע התיקון לזהות דפדפן מלאה ---
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
@@ -494,6 +495,8 @@ if matrix_table_data:
         return styles
 
     st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+
+st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
