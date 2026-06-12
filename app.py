@@ -221,6 +221,8 @@ if rows_data:
         c[4].markdown(row['מגמת 5m'], unsafe_allow_html=True)
         c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
         c[6].plotly_chart(row['גרף'], config={'displayModeBar': False})
+else:
+    st.warning("⚠️ לא התקבלו נתונים מהבורסה עבור הסריקה הרוחבית. ייתכן ש-Yahoo Finance חוסם כרגע בקשות עקב עומס רשת. המערכת תנסה שוב ברענון הבא.")
 
 st.markdown("---")
 
@@ -243,6 +245,8 @@ if sec_data:
         with sec_cols[idx % 3]:
             txt_color = "green-text" if s['pos'] else "red-text"
             st.markdown(f"**{s['name']}**: {s['price']} | <span class='{txt_color}'>{s['chg']}</span>", unsafe_allow_html=True)
+else:
+    st.warning("⚠️ לא התקבלו נתוני רוטציית סקטורים. המערכת מנסה להתחבר מחדש לנתוני הבורסה...")
 
 st.markdown("---")
 
@@ -321,48 +325,36 @@ term_structure = "ניטרלי"
 
 try:
     hist_market = fetch_macro_data()
-    
-    # פונקציה פנימית חסינה לחלוטין - עוקפת את מנגנון 'in' של פנדס
-    # ומנסה לגשת לכל מבני הנתונים האפשריים באופן ישיר
-    def safe_extract(ticker, default_value):
-        possible_columns = [
-            f"Close_{ticker}", f"{ticker}_Close",
-            ('Close', ticker), (ticker, 'Close'), 'Close'
-        ]
-        for col in possible_columns:
-            try:
-                series = hist_market[col].dropna()
-                if not series.empty:
-                    if isinstance(series, pd.DataFrame):
-                        series = series.iloc[:, 0]
-                    return float(series.iloc[-1])
-            except Exception:
-                continue
-        return default_value
-
-    # חילוץ בטוח עבור מדד SPY (לחישוב Hurst)
-    spy_closes = []
-    for col in ['Close_SPY', 'SPY_Close', ('Close', 'SPY'), ('SPY', 'Close'), 'Close']:
-        try:
-            s = hist_market[col].dropna()
-            if not s.empty:
-                if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
-                spy_closes = s.values
-                break
-        except Exception:
-            continue
-            
-    if len(spy_closes) > 0:
-        hurst_spy = calculate_hurst(spy_closes)
+    if hist_market is not None and not hist_market.empty:
+        # חילוץ בטוח ללא פקודות מורכבות של פנדס למניעת קריסה
+        if isinstance(hist_market.columns, pd.MultiIndex):
+            hist_market.columns = ['_'.join(str(c) for c in col).strip() for col in hist_market.columns.values]
         
-    vix_val = safe_extract('^VIX', 20.0)
-    tnx_val = safe_extract('^TNX', 4.0)
-    oil_price = safe_extract('CL=F', 75.0)
-    
-    erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
-    term_structure = "Backwardation" if oil_price > 80 else "Contango"
-except Exception as e:
-    pass # במקרה קיצון נמשיך עם ערכי ברירת המחדל ללא קריסה
+        def get_val(options, default):
+            for o in options:
+                if o in hist_market.columns:
+                    s = hist_market[o].dropna()
+                    if not s.empty:
+                        if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
+                        return float(s.iloc[-1])
+            return default
+
+        vix_val = get_val(['Close_^VIX', '^VIX_Close', 'Close'], 20.0)
+        tnx_val = get_val(['Close_^TNX', '^TNX_Close', 'Close'], 4.0)
+        oil_price = get_val(['Close_CL=F', 'CL=F_Close', 'Close'], 75.0)
+        
+        erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
+        term_structure = "Backwardation" if oil_price > 80 else "Contango"
+        
+        for o in ['Close_SPY', 'SPY_Close', 'Close']:
+            if o in hist_market.columns:
+                s = hist_market[o].dropna()
+                if not s.empty:
+                    if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
+                    hurst_spy = calculate_hurst(s.values)
+                    break
+except Exception:
+    pass
 
 current_day = now_dt.day
 current_month = now_dt.month
@@ -529,6 +521,8 @@ if matrix_table_data:
         return styles
 
     st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+else:
+    st.warning("⚠️ לא התקבלו נתונים לבניית מטריצת הצלפים עקב חסימת רשת זמנית. המערכת תבצע ניסיון חוזר.")
 
 st.markdown("---")
 
@@ -537,7 +531,7 @@ st.markdown("---")
 # ==========================================
 st.subheader("🎯 זירת צלפים PRO (Liquidity, Order Blocks & POC)")
 
-@st.cache_data(ttl=120)  # רענון כל שתי דקות
+@st.cache_data(ttl=120)
 def get_pro_reversal_targets():
     pairs = [('SOXX', 'SOXS'), ('QQQ', 'SQQQ')]
     results = []
@@ -545,6 +539,7 @@ def get_pro_reversal_targets():
     for base, lev in pairs:
         try:
             daily = yf.download(base, period="5d", interval="1d", progress=False)
+            if daily.empty: continue
             if isinstance(daily.columns, pd.MultiIndex):
                 daily.columns = [col[0] for col in daily.columns]
             yest = daily.iloc[-2] if len(daily) > 1 else daily.iloc[0]
@@ -552,6 +547,7 @@ def get_pro_reversal_targets():
             R4 = C + (H - L) * 1.1 / 2
             
             intra = yf.download(base, period="5d", interval="5m", progress=False)
+            if intra.empty: continue
             if isinstance(intra.columns, pd.MultiIndex):
                 intra.columns = [col[0] for col in intra.columns]
             prices, vols = intra['Close'], intra['Volume']
@@ -652,7 +648,7 @@ if pro_data:
             st.markdown(f"<br><span style='color:{data['color']}; font-weight:bold;'>{data['status']}</span>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.info("ממתין לנתוני מסחר לחילוץ רמות PRO...")
+    st.info("⚠️ ממתין לנתוני מסחר לחילוץ רמות PRO (ייתכן עיכוב ברשת)...")
 
 # ==========================================
 # פקודות רענון סיום הקובץ
