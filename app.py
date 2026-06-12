@@ -222,7 +222,7 @@ if rows_data:
         c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
         c[6].plotly_chart(row['גרף'], config={'displayModeBar': False})
 else:
-    st.warning("⚠️ לא התקבלו נתונים מהבורסה עבור הסריקה הרוחבית.")
+    st.warning("⚠️ לא התקבלו נתונים מהבורסה עבור הסריקה הרוחבית. ייתכן ש-Yahoo Finance חוסם כרגע בקשות עקב עומס רשת. המערכת תנסה שוב ברענון הבא.")
 
 st.markdown("---")
 
@@ -246,7 +246,7 @@ if sec_data:
             txt_color = "green-text" if s['pos'] else "red-text"
             st.markdown(f"**{s['name']}**: {s['price']} | <span class='{txt_color}'>{s['chg']}</span>", unsafe_allow_html=True)
 else:
-    st.warning("⚠️ לא התקבלו נתוני רוטציית סקטורים.")
+    st.warning("⚠️ לא התקבלו נתוני רוטציית סקטורים. המערכת מנסה להתחבר מחדש לנתוני הבורסה...")
 
 st.markdown("---")
 
@@ -257,7 +257,9 @@ tomorrow_date = today_date + timedelta(days=1)
 
 all_events = [
     {"תאריך": today_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "CPI מדד המחירים לצרכן", "תקופה": "May", "בפועל": "335.12", "צפי": "335.11", "קודם": "333.02", "is_lower_better": True},
-    {"תאריך": today_date, "שעה": "10:30 AM", "עוצמה": "🟠", "אירוע": "EIA Crude Oil Stocks Change", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M", "is_lower_better": False}
+    {"תאריך": today_date, "שעה": "10:30 AM", "עוצמה": "🟠", "אירוע": "EIA Crude Oil Stocks Change", "תקופה": "Jun 6", "בפועל": "-7.228M", "צפי": "-4.0M", "קודם": "-7.974M", "is_lower_better": False},
+    {"תאריך": tomorrow_date, "שעה": "08:30 AM", "עוצמה": "🔴", "אירוע": "Core PPI MoM", "תקופה": "May", "בפועל": "--", "צפי": "0.2%", "קודם": "0.1%", "is_lower_better": True},
+    {"תאריך": tomorrow_date, "שעה": "02:30 PM", "עוצמה": "🟠", "אירוע": "Initial Jobless Claims", "תקופה": "Weekly", "בפועל": "--", "צפי": "215K", "קודם": "220K", "is_lower_better": True}
 ]
 
 filtered_events = []
@@ -311,9 +313,10 @@ else:
 
 st.markdown("---")
 
-# --- קומת מאקרו: חילוץ בטוח ---
+# --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
 st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
 
+# הצבת ערכי ברירת מחדל בטוחים (מונע שגיאות חילוץ)
 hurst_spy = 0.5
 erp_stress = 0.20
 tnx_val = 4.0
@@ -323,6 +326,7 @@ term_structure = "ניטרלי"
 try:
     hist_market = fetch_macro_data()
     if hist_market is not None and not hist_market.empty:
+        # חילוץ בטוח ללא פקודות מורכבות של פנדס למניעת קריסה
         if isinstance(hist_market.columns, pd.MultiIndex):
             hist_market.columns = ['_'.join(str(c) for c in col).strip() for col in hist_market.columns.values]
         
@@ -365,7 +369,14 @@ col_mac1, col_mac2, col_mac3, col_mac4 = st.columns(4)
 col_mac1.metric("📉 משטר שוק (Hurst)", f"{hurst_spy:.2f}", "מגמתי שורי (H > 0.5)" if hurst_spy > 0.5 else "שוק דשדוש", delta_color="normal" if hurst_spy > 0.5 else "inverse")
 col_mac2.metric("🛢️ עקום הנפט (WTI)", f"{oil_price:.2f}$", f"{term_structure} (הגנת לונג)", delta_color="normal" if "Backwardation" in term_structure else "inverse")
 col_mac3.metric("🚨 ערוץ לחץ (ERP Stress)", f"{erp_stress:.2f}", "שוק רגוע (Risk-On)" if erp_stress < 0.25 else "שוק בסיכון", delta_color="inverse")
-col_mac4.metric("📅 סטטוס קלנדרי", "TOM פעיל" if is_tom_active else ("Pre-TOM משיכות" if is_pre_tom_active else "שגרה"), "חלון מוסדי פעיל" if is_tom_active or is_pre_tom_active else "", delta_color=tom_color)
+
+if is_tom_active:
+    cal_status = "TOM פעיל"
+elif is_pre_tom_active:
+    cal_status = "Pre-TOM משיכות"
+else:
+    cal_status = "שגרה"
+col_mac4.metric("📅 סטטוס קלנדרי", cal_status, "חלון מוסדי פעיל" if cal_status != "שגרה" else "", delta_color=tom_color)
 
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
@@ -590,8 +601,12 @@ if pro_data:
         
     df_pro = pd.DataFrame(pro_table)
     
+    # חילוץ בטוח של הצבעים הצידה למניעת קריסות (KeyError)
+    color_list = df_pro['_color'].tolist()
+    df_pro_clean = df_pro.drop(columns=['_color'])
+    
     def style_pro_matrix(row):
-        color = row['_color']
+        color = color_list[row.name]
         styles = [''] * len(row)
         if color == 'green':
             return ['background-color: rgba(0, 255, 0, 0.15); border-bottom: 1px solid #00ff00;'] * len(row)
@@ -601,7 +616,7 @@ if pro_data:
             return ['background-color: rgba(255, 255, 0, 0.15); border-bottom: 1px solid yellow;'] * len(row)
         return styles
         
-    st.dataframe(df_pro.drop(columns=['_color']).style.apply(style_pro_matrix, axis=1), use_container_width=True, hide_index=True)
+    st.dataframe(df_pro_clean.style.apply(style_pro_matrix, axis=1), use_container_width=True, hide_index=True)
 else:
     st.info("⚠️ ממתין לנתוני מסחר לחילוץ רמות PRO (ייתכן עיכוב ברשת)...")
 
