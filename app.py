@@ -71,7 +71,7 @@ st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות 
 st.write(f"🔄 מתעדכן חי | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
-# --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
+# --- רשימות נכסים ומעקב ---
 assets = {
     'S&P 500 (SPY)': 'SPY', 'Nasdaq 100 (QQQ)': 'QQQ', 'VIX Index': '^VIX',
     'Crude Oil': 'CL=F', 'Silver': 'SI=F', 'Platinum': 'PL=F', 
@@ -85,19 +85,17 @@ sectors = {
     'Real Estate (XLRE)': 'XLRE', 'Nuclear (URA)': 'URA', 'Quantum (QTUM)': 'QTUM'
 }
 
-# --- מנוע נרות יפניים תוך-יומיים וחישוב מגמות חסין ---
+# --- מנוע נרות יפניים וחישוב מגמות ---
 def get_asset_metrics(name, ticker):
     try:
         ticker_obj = yf.Ticker(ticker)
         
-        # משיכת היסטוריה קצרה לחישוב מדויק של מחיר ושינוי יומי (פותר את בעיית החוזים/סחורות)
         df_daily = ticker_obj.history(period="3d", interval="1d")
         if df_daily.empty: return None
         
         current_price = float(df_daily['Close'].iloc[-1])
-        prev_close_daily = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else prev_close_daily
+        prev_close_daily = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else current_price
         
-        # חישוב אחוז שינוי יומי מבוסס סגירה אתמול במקום fast_info השבור של יאהו
         daily_change = ((current_price - prev_close_daily) / prev_close_daily) * 100
         
         df_1m = ticker_obj.history(period="1d", interval="1m")
@@ -114,18 +112,28 @@ def get_asset_metrics(name, ticker):
         arrow_5m = get_arrow_html(current_price, p_5m)
         arrow_15m = get_arrow_html(current_price, p_15m)
         
-        df_15m = ticker_obj.history(period="1d", interval="15m")
-        if df_15m.empty: df_15m = df_1m 
+        # משיכת נתונים ליומיים אחורה כדי שיהיו מספיק נרות גם בפתיחת המסחר
+        df_15m_chart = ticker_obj.history(period="2d", interval="15m")
+        if df_15m_chart.empty: df_15m_chart = df_1m 
+        
+        # שמירת 30 הנרות האחרונים בלבד כדי לייצר מסגרת קבועה של נרות
+        df_15m_chart = df_15m_chart.tail(30)
         
         fig = go.Figure(data=[go.Candlestick(
-            x=df_15m.index, open=df_15m['Open'], high=df_15m['High'],
-            low=df_15m['Low'], close=df_15m['Close'],
+            x=df_15m_chart.index, open=df_15m_chart['Open'], high=df_15m_chart['High'],
+            low=df_15m_chart['Low'], close=df_15m_chart['Close'],
             increasing_line_color='#00ff00', increasing_fillcolor='#00ff00',
             decreasing_line_color='#ff0000', decreasing_fillcolor='#ff0000'
         )])
         
+        # הוספת boundsbreaks כדי להסיר חורים בגרף (כמו שעות לילה) כך שהנרות יהיו רציפים
+        fig.update_xaxes(
+            rangebreaks=[dict(bounds=["sat", "mon"]), dict(bounds=[16, 9.5], pattern="hour")],
+            visible=False
+        )
+        
         fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=60, width=180,
-            xaxis_rangeslider_visible=False, xaxis=dict(visible=False), yaxis=dict(visible=False),
+            xaxis_rangeslider_visible=False, yaxis=dict(visible=False),
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         
         return {
@@ -173,7 +181,6 @@ with col_m1:
         
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # --- מעקף API מרכזי ל-CNN Fear & Greed ---
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/current"
         headers = {
@@ -210,9 +217,10 @@ if rows_data:
     cols[0].markdown("**שם הנכס**")
     cols[1].markdown("**מחיר**")
     cols[2].markdown("**שינוי יומי**")
-    cols[3].markdown("**1 דק'**")
+    # סידור העמודות: 15 דקות משמאל, 1 דקה מימין
+    cols[3].markdown("**15 דק'**")
     cols[4].markdown("**5 דק'**")
-    cols[5].markdown("**15 דק'**")
+    cols[5].markdown("**1 דק'**")
     cols[6].markdown("**גרף תוך-יומי (נר = 15 דק')**")
     st.markdown("<hr style='margin:4px 0px;'>", unsafe_allow_html=True)
     
@@ -222,9 +230,9 @@ if rows_data:
         color_class = "green-text" if row['is_positive'] else "red-text"
         c[1].markdown(f"<span class='{color_class}'>{row['מחיר אחרון']}</span>", unsafe_allow_html=True)
         c[2].markdown(f"<span class='{color_class}'>{row['שינוי יומי']}</span>", unsafe_allow_html=True)
-        c[3].markdown(row['mגמת 1m'] if 'mגמת 1m' in row else row.get('מגמת 1m', '➖'), unsafe_allow_html=True)
+        c[3].markdown(row['מגמת 15m'], unsafe_allow_html=True)
         c[4].markdown(row['מגמת 5m'], unsafe_allow_html=True)
-        c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
+        c[5].markdown(row['מגמת 1m'], unsafe_allow_html=True)
         c[6].plotly_chart(row['גרף'], config={'displayModeBar': False})
 else:
     st.warning("⚠️ לא התקבלו נתונים עבור הסריקה הרוחבית עקב חסימת רשת.")
