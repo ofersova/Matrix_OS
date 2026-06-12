@@ -481,20 +481,20 @@ if matrix_table_data:
     ]]
 
   def style_matrix(row):
-            styles = [''] * len(row)
-            score_val = str(row['קפיץ\nמשוקלל'])
-            sym_panel = str(row['פאנל חיווי'])
-            
-            active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
-            
-            if active_symbols >= 3:
-                if "לונג" in score_val: 
-                    return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
-                elif "שורט" in score_val: 
-                    return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
-            return styles
+    styles = [''] * len(row)
+    score_val = str(row['קפיץ\nמשוקלל'])
+    sym_panel = str(row['פאנל חיווי'])
+    
+    active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
+    
+    if active_symbols >= 3:
+        if "לונג" in score_val: 
+            return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+        elif "שורט" in score_val: 
+            return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+    return styles
 
-        st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
