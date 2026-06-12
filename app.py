@@ -326,4 +326,4 @@ try:
     erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
     term_structure = "Backwardation" if oil_price > 80 else "Contango"
 except:
-    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4
+    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
