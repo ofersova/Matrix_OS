@@ -480,23 +480,21 @@ if matrix_table_data:
         '🌍 (Macro)\nמשקל'
     ]]
 
-    def style_matrix(row):
-        styles = [''] * len(row)
-        score_val = str(row['קפיץ\nמשוקלל'])
-        sym_panel = str(row['פאנל חיווי'])
-        
-        active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
-        
-        if active_symbols >= 3:
-            if "לונג" in score_val: 
-                return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
-            elif "שורט" in score_val: 
-                return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
-        return styles
+  def style_matrix(row):
+            styles = [''] * len(row)
+            score_val = str(row['קפיץ\nמשוקלל'])
+            sym_panel = str(row['פאנל חיווי'])
+            
+            active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
+            
+            if active_symbols >= 3:
+                if "לונג" in score_val: 
+                    return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+                elif "שורט" in score_val: 
+                    return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+            return styles
 
-    st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
-
-st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+        st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
@@ -512,7 +510,6 @@ def get_pro_reversal_targets():
     
     for base, lev in pairs:
         try:
-            # 1. קמרילה (יומי)
             daily = yf.download(base, period="5d", interval="1d", progress=False)
             if isinstance(daily.columns, pd.MultiIndex):
                 daily.columns = [col[0] for col in daily.columns]
@@ -520,7 +517,6 @@ def get_pro_reversal_targets():
             H, L, C = float(yest['High']), float(yest['Low']), float(yest['Close'])
             R4 = C + (H - L) * 1.1 / 2
             
-            # 2. פרופיל נפח (5 דקות, 5 ימים)
             intra = yf.download(base, period="5d", interval="5m", progress=False)
             if isinstance(intra.columns, pd.MultiIndex):
                 intra.columns = [col[0] for col in intra.columns]
@@ -541,7 +537,6 @@ def get_pro_reversal_targets():
             target_volume = vol_profile.sum() * 0.70
             upper_idx, lower_idx = poc_idx, poc_idx
             
-            # לולאת הרחבת אזור הערך (70%)
             while va_volume < target_volume:
                 can_up = upper_idx < len(vol_profile) - 1
                 can_down = lower_idx > 0
@@ -561,7 +556,6 @@ def get_pro_reversal_targets():
             VAH = bin_centers[upper_idx]
             VAL = bin_centers[lower_idx]
             
-            # 3. נתונים נוכחיים והמרה ליעדים ממונפים
             curr_base = float(yf.Ticker(base).fast_info.last_price)
             curr_lev = float(yf.Ticker(lev).fast_info.last_price)
             
@@ -572,23 +566,21 @@ def get_pro_reversal_targets():
             dist_vah, lev_vah = get_target(VAH)
             dist_poc, lev_poc = get_target(poc_price)
             
-            # 4. לוגיקת צבעים ומצבים מוסדית
             state_color = "white"
             status_text = "ממתין לתנועה"
             
             if curr_base > VAH:
-                state_color = "#ff4b4b" # אדום - פומו / שאיבת נזילות
+                state_color = "#ff4b4b" 
                 status_text = "⚠️ המחיר מעל לאזור הערך (FOMO / נפרץ)"
             elif curr_base < VAL:
-                state_color = "#ff4b4b" # אדום - קריסה
+                state_color = "#ff4b4b" 
                 status_text = "⚠️ המחיר מתחת לאזור הערך (נפרץ מטה)"
             else:
-                # המחיר בתוך אזור הערך
-                if abs(dist_vah) <= 0.006: # מתקרב לתקרה (סבילות של 0.6%)
-                    state_color = "#00ff00" # ירוק - איתות לשורט
+                if abs(dist_vah) <= 0.006: 
+                    state_color = "#00ff00" 
                     status_text = "✅ איתות שורט: המחיר נבלם בתקרת ה-VAH"
                 elif abs(dist_poc) <= 0.005:
-                    state_color = "#ffcc00" # צהוב
+                    state_color = "#ffcc00" 
                     status_text = "⚖️ המחיר על ליבת ה-POC (מגנט מסחר)"
                 else:
                     state_color = "#ffffff"
@@ -627,7 +619,6 @@ if pro_data:
             st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("ממתין לנתוני מסחר לחילוץ רמות PRO...")
-
 
 time.sleep(15)
 st.rerun()
