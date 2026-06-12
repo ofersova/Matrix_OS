@@ -174,7 +174,6 @@ with col_m1:
     
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        # --- כאן בוצע התיקון לזהות דפדפן מלאה ---
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
@@ -222,6 +221,8 @@ if rows_data:
         c[4].markdown(row['מגמת 5m'], unsafe_allow_html=True)
         c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
         c[6].plotly_chart(row['גרף'], config={'displayModeBar': False})
+else:
+    st.warning("⚠️ לא התקבלו נתונים מהבורסה עבור הסריקה הרוחבית. ייתכן ש-Yahoo Finance חוסם כרגע בקשות עקב עומס רשת. המערכת תנסה שוב ברענון הבא.")
 
 st.markdown("---")
 
@@ -244,6 +245,8 @@ if sec_data:
         with sec_cols[idx % 3]:
             txt_color = "green-text" if s['pos'] else "red-text"
             st.markdown(f"**{s['name']}**: {s['price']} | <span class='{txt_color}'>{s['chg']}</span>", unsafe_allow_html=True)
+else:
+    st.warning("⚠️ לא התקבלו נתוני רוטציית סקטורים. המערכת מנסה להתחבר מחדש לנתוני הבורסה...")
 
 st.markdown("---")
 
@@ -313,22 +316,45 @@ st.markdown("---")
 # --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
 st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
 
+# הצבת ערכי ברירת מחדל בטוחים (מונע שגיאות חילוץ)
+hurst_spy = 0.5
+erp_stress = 0.20
+tnx_val = 4.0
+oil_price = 75.0
+term_structure = "ניטרלי"
+
 try:
     hist_market = fetch_macro_data()
-    if isinstance(hist_market.columns, pd.MultiIndex):
-        hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
-    
-    spy_closes = hist_market['Close_SPY'].dropna().values
-    vix_val = float(hist_market['Close_^VIX'].dropna().iloc[-1])
-    tnx_val = float(hist_market['Close_^TNX'].dropna().iloc[-1])
-    oil_price = float(hist_market['Close_CL=F'].dropna().iloc[-1])
-    
-    hurst_spy = calculate_hurst(spy_closes)
-    erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
-    term_structure = "Backwardation" if oil_price > 80 else "Contango"
-except:
-    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
-    term_structure = "ניטרלי"
+    if hist_market is not None and not hist_market.empty:
+        # חילוץ בטוח ללא פקודות מורכבות של פנדס למניעת קריסה
+        if isinstance(hist_market.columns, pd.MultiIndex):
+            hist_market.columns = ['_'.join(str(c) for c in col).strip() for col in hist_market.columns.values]
+        
+        def get_val(options, default):
+            for o in options:
+                if o in hist_market.columns:
+                    s = hist_market[o].dropna()
+                    if not s.empty:
+                        if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
+                        return float(s.iloc[-1])
+            return default
+
+        vix_val = get_val(['Close_^VIX', '^VIX_Close', 'Close'], 20.0)
+        tnx_val = get_val(['Close_^TNX', '^TNX_Close', 'Close'], 4.0)
+        oil_price = get_val(['Close_CL=F', 'CL=F_Close', 'Close'], 75.0)
+        
+        erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
+        term_structure = "Backwardation" if oil_price > 80 else "Contango"
+        
+        for o in ['Close_SPY', 'SPY_Close', 'Close']:
+            if o in hist_market.columns:
+                s = hist_market[o].dropna()
+                if not s.empty:
+                    if isinstance(s, pd.DataFrame): s = s.iloc[:, 0]
+                    hurst_spy = calculate_hurst(s.values)
+                    break
+except Exception:
+    pass
 
 current_day = now_dt.day
 current_month = now_dt.month
@@ -495,93 +521,134 @@ if matrix_table_data:
         return styles
 
     st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
-
-st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+else:
+    st.warning("⚠️ לא התקבלו נתונים לבניית מטריצת הצלפים עקב חסימת רשת זמנית. המערכת תבצע ניסיון חוזר.")
 
 st.markdown("---")
 
 # ==========================================
-# --- תוסף זירת צלפים (Liquidity & Camarilla) ---
+# --- תוסף זירת צלפים מוסדית PRO (Volume Profile + Camarilla) ---
 # ==========================================
-st.subheader("🎯 זירת צלפים (Liquidity & Order Blocks)")
+st.subheader("🎯 זירת צלפים PRO (Liquidity, Order Blocks & POC)")
 
-@st.cache_data(ttl=120)  # רענון כל שתי דקות
-def get_reversal_targets():
+@st.cache_data(ttl=120)
+def get_pro_reversal_targets():
     pairs = [('SOXX', 'SOXS'), ('QQQ', 'SQQQ')]
     results = []
     
     for base, lev in pairs:
         try:
-            # משיכת נתוני בסיס יומיים (לקמרילה)
-            hist = yf.download(base, period="5d", interval="1d", progress=False)
-            if isinstance(hist.columns, pd.MultiIndex):
-                hist.columns = [col[0] for col in hist.columns]
-                
-            # מציאת היום הקודם המלא
-            yest = hist.iloc[-2] if len(hist) > 1 else hist.iloc[0]
+            daily = yf.download(base, period="5d", interval="1d", progress=False)
+            if daily.empty: continue
+            if isinstance(daily.columns, pd.MultiIndex):
+                daily.columns = [col[0] for col in daily.columns]
+            yest = daily.iloc[-2] if len(daily) > 1 else daily.iloc[0]
             H, L, C = float(yest['High']), float(yest['Low']), float(yest['Close'])
+            R4 = C + (H - L) * 1.1 / 2
             
-            # שערי זמן אמת
+            intra = yf.download(base, period="5d", interval="5m", progress=False)
+            if intra.empty: continue
+            if isinstance(intra.columns, pd.MultiIndex):
+                intra.columns = [col[0] for col in intra.columns]
+            prices, vols = intra['Close'], intra['Volume']
+            
+            bins = np.linspace(prices.min(), prices.max(), 50)
+            digitized = np.digitize(prices, bins)
+            vol_profile = np.zeros(len(bins)-1)
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            
+            for i in range(1, len(bins)):
+                vol_profile[i-1] = vols[digitized == i].sum()
+                
+            poc_idx = np.argmax(vol_profile)
+            poc_price = bin_centers[poc_idx]
+            
+            va_volume = vol_profile[poc_idx]
+            target_volume = vol_profile.sum() * 0.70
+            upper_idx, lower_idx = poc_idx, poc_idx
+            
+            while va_volume < target_volume:
+                can_up = upper_idx < len(vol_profile) - 1
+                can_down = lower_idx > 0
+                if not can_up and not can_down: break
+                
+                vol_up = vol_profile[upper_idx + 1] if can_up else 0
+                vol_down = vol_profile[lower_idx - 1] if can_down else 0
+                
+                if vol_up >= vol_down and can_up:
+                    upper_idx += 1
+                    va_volume += vol_up
+                elif can_down:
+                    lower_idx -= 1
+                    va_volume += vol_down
+                else: break
+                    
+            VAH = bin_centers[upper_idx]
+            VAL = bin_centers[lower_idx]
+            
             curr_base = float(yf.Ticker(base).fast_info.last_price)
             curr_lev = float(yf.Ticker(lev).fast_info.last_price)
             
-            # חישוב התנגדויות קמרילה
-            R3 = C + (H - L) * 1.1 / 4
-            R4 = C + (H - L) * 1.1 / 2
+            def get_target(res):
+                dist = (res - curr_base) / curr_base
+                return dist, curr_lev * (1 + (dist * -3))
+                
+            dist_vah, lev_vah = get_target(VAH)
+            dist_poc, lev_poc = get_target(poc_price)
             
-            # קביעת שער הקמרילה הקרוב ביותר (גם אם נפרץ)
-            dist_r3 = abs(R3 - curr_base)
-            dist_r4 = abs(R4 - curr_base)
-            target_res = R3 if dist_r3 < dist_r4 else R4
-            
-            dist_pct = (target_res - curr_base) / curr_base
-            # גזירת יעד לנכס הממונף (מינוף -3)
-            target_lev = curr_lev * (1 + (dist_pct * -3))
-            
-            # קביעת צבע וסטטוס
             state_color = "white"
             status_text = "ממתין לתנועה"
             
-            if dist_pct < -0.005: 
-                state_color = "#ff4b4b" # אדום - נפרץ
-                status_text = "המחיר מעל לקו (נפרץ)"
-            elif -0.005 <= dist_pct <= 0: 
-                state_color = "#00ff00" # ירוק - CHOCH/היפוך
-                status_text = "איתות כניסה: פריצת שווא אושרה"
-            elif 0 < dist_pct <= 0.005: 
-                state_color = "#ffcc00" # צהוב - מתקרב
-                status_text = "מתקרב להתנגדות - היכון"
+            if curr_base > VAH:
+                state_color = "#ff4b4b" 
+                status_text = "⚠️ המחיר מעל לאזור הערך (FOMO / נפרץ)"
+            elif curr_base < VAL:
+                state_color = "#ff4b4b" 
+                status_text = "⚠️ המחיר מתחת לאזור הערך (נפרץ מטה)"
             else:
-                state_color = "#ffffff"
-                status_text = "המחיר מתחת לקו"
+                if abs(dist_vah) <= 0.006: 
+                    state_color = "#00ff00" 
+                    status_text = "✅ איתות שורט: המחיר נבלם בתקרת ה-VAH"
+                elif abs(dist_poc) <= 0.005:
+                    state_color = "#ffcc00" 
+                    status_text = "⚖️ המחיר על ליבת ה-POC (מגנט מסחר)"
+                else:
+                    state_color = "#ffffff"
+                    status_text = "המחיר בתוך אזור הערך (תנועת דשדוש)"
             
             results.append({
-                'lev': lev, 'base': base, 
-                'target_lev': target_lev, 'curr_lev': curr_lev,
-                'target_res': target_res, 'curr_base': curr_base,
-                'color': state_color, 'status': status_text, 'dist_pct': dist_pct
+                'lev': lev, 'base': base, 'curr_lev': curr_lev, 'curr_base': curr_base,
+                'poc': poc_price, 'vah': VAH, 'val': VAL, 'r4': R4,
+                'lev_poc': lev_poc, 'lev_vah': lev_vah,
+                'dist_vah': dist_vah, 'color': state_color, 'status': status_text
             })
         except Exception as e:
-            continue # דילוג שקט במקרה של שגיאת רשת
+            continue
     return results
 
-reversal_data = get_reversal_targets()
+pro_data = get_pro_reversal_targets()
 
-if reversal_data:
-    cols_rev = st.columns(len(reversal_data))
-    for idx, data in enumerate(reversal_data):
-        with cols_rev[idx]:
-            border_color = data['color'] if data['color'] != 'white' else '#444'
-            st.markdown(f"<div style='border:2px solid {border_color}; padding:10px; border-radius:5px;'>", unsafe_allow_html=True)
-            st.markdown(f"#### {data['lev']} <span style='color:green; font-size:16px;'>[שער יעד: {data['target_lev']:.2f}$]</span>", unsafe_allow_html=True)
-            st.markdown(f"שער נוכחי: **{data['curr_lev']:.2f}$**")
-            st.markdown(f"<small>מבוסס על קו קמרילה ({data['base']}) ב-{data['target_res']:.2f}$ (מרחק: {data['dist_pct']*100:.2f}%)</small>", unsafe_allow_html=True)
-            st.markdown(f"<span style='color:{data['color']}; font-weight:bold;'>{data['status']}</span>", unsafe_allow_html=True)
+if pro_data:
+    cols_pro = st.columns(len(pro_data))
+    for idx, data in enumerate(pro_data):
+        with cols_pro[idx]:
+            bc = data['color'] if data['color'] != 'white' else '#444'
+            st.markdown(f"<div style='border:2px solid {bc}; padding:10px; border-radius:5px;'>", unsafe_allow_html=True)
+            st.markdown(f"#### {data['lev']} | נוכחי: **{data['curr_lev']:.2f}$**", unsafe_allow_html=True)
+            
+            st.markdown(f"<span style='color:#00ff00; font-size:15px;'>🎯 יעד כניסה 1 (VAH): <b>[{data['lev_vah']:.2f}$]</b></span><br>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:#00ffff; font-size:15px;'>🎯 יעד כניסה 2 (POC): <b>[{data['lev_poc']:.2f}$]</b></span>", unsafe_allow_html=True)
+            
+            st.markdown("<hr style='margin: 8px 0; border-color: #555;'>", unsafe_allow_html=True)
+            st.markdown(f"<small><b>נתוני {data['base']} מוסדיים (נוכחי: {data['curr_base']:.2f}$):</b></small><br>", unsafe_allow_html=True)
+            st.markdown(f"<small>🔼 תקרת אזור (VAH): {data['vah']:.2f}$</small><br>", unsafe_allow_html=True)
+            st.markdown(f"<b><small>🎯 ליבת כוח (POC): {data['poc']:.2f}$</small></b><br>", unsafe_allow_html=True)
+            st.markdown(f"<small>🔽 רצפת אזור (VAL): {data['val']:.2f}$</small>", unsafe_allow_html=True)
+            
+            st.markdown(f"<br><span style='color:{data['color']}; font-weight:bold;'>{data['status']}</span>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.info("ממתין לנתוני מסחר לחילוץ רמות נזילות...")
-
-# ==========================================
+    st.info("⚠️ ממתין לנתוני מסחר לחילוץ רמות PRO (ייתכן עיכוב ברשת)...")
 
 # ==========================================
 # פקודות רענון סיום הקובץ
