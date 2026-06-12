@@ -312,6 +312,13 @@ st.markdown("---")
 # --- מנוע החישוב האמיתי (Data Pipeline לפרק 8 ו-12) ---
 st.subheader("🌍 קומת מאקרו: סביבת שוק וזרימת הון")
 
+# הצבת ערכי ברירת מחדל בטוחים (מונע שגיאות חילוץ)
+hurst_spy = 0.5
+erp_stress = 0.20
+tnx_val = 4.0
+oil_price = 75.0
+term_structure = "ניטרלי"
+
 try:
     hist_market = fetch_macro_data()
     if isinstance(hist_market.columns, pd.MultiIndex):
@@ -325,9 +332,8 @@ try:
     hurst_spy = calculate_hurst(spy_closes)
     erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
     term_structure = "Backwardation" if oil_price > 80 else "Contango"
-except:
-    hurst_spy, erp_stress, tnx_val, oil_price = 0.5, 0.20, 4.0, 75.0
-    term_structure = "ניטרלי"
+except Exception as e:
+    pass # במקרה של תקלת רשת, המערכת תשתמש בערכי ברירת המחדל שהוגדרו מראש למעלה
 
 current_day = now_dt.day
 current_month = now_dt.month
