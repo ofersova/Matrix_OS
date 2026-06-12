@@ -517,6 +517,7 @@ def get_reversal_targets():
             if isinstance(hist.columns, pd.MultiIndex):
                 hist.columns = [col[0] for col in hist.columns]
                 
+            # מציאת היום הקודם המלא
             yest = hist.iloc[-2] if len(hist) > 1 else hist.iloc[0]
             H, L, C = float(yest['High']), float(yest['Low']), float(yest['Close'])
             
@@ -528,34 +529,38 @@ def get_reversal_targets():
             R3 = C + (H - L) * 1.1 / 4
             R4 = C + (H - L) * 1.1 / 2
             
-            # קביעת שער ההתנגדות הרלוונטי (הראשון שמעל המחיר הנוכחי)
-            target_res = R3 if curr_base < R3 else (R4 if curr_base < R4 else None)
+            # קביעת שער הקמרילה הקרוב ביותר (גם אם נפרץ)
+            dist_r3 = abs(R3 - curr_base)
+            dist_r4 = abs(R4 - curr_base)
+            target_res = R3 if dist_r3 < dist_r4 else R4
             
-            if target_res:
-                dist_pct = (target_res - curr_base) / curr_base
-                # גזירת יעד לנכס הממונף (מינוף -3)
-                target_lev = curr_lev * (1 + (dist_pct * -3))
-                
-                # קביעת צבע וסטטוס
-                state_color = "white"
-                status_text = "ממתין להגעה ליעד"
-                
-                if dist_pct < -0.005: 
-                    state_color = "#ff4b4b" # אדום - נפרץ
-                    status_text = "נפרץ (Liquidity Grab)"
-                elif -0.005 <= dist_pct <= 0: 
-                    state_color = "#00ff00" # ירוק - אישור היפוך
-                    status_text = "איתות כניסה: פריצת שווא אושרה"
-                elif 0 < dist_pct <= 0.005: 
-                    state_color = "#ffcc00" # צהוב - מתקרב
-                    status_text = "מתקרב להתנגדות - היכון"
-                
-                results.append({
-                    'lev': lev, 'base': base, 
-                    'target_lev': target_lev, 'curr_lev': curr_lev,
-                    'target_res': target_res, 'curr_base': curr_base,
-                    'color': state_color, 'status': status_text, 'dist_pct': dist_pct
-                })
+            dist_pct = (target_res - curr_base) / curr_base
+            # גזירת יעד לנכס הממונף (מינוף -3)
+            target_lev = curr_lev * (1 + (dist_pct * -3))
+            
+            # קביעת צבע וסטטוס
+            state_color = "white"
+            status_text = "ממתין לתנועה"
+            
+            if dist_pct < -0.005: 
+                state_color = "#ff4b4b" # אדום - נפרץ
+                status_text = "המחיר מעל לקו (נפרץ)"
+            elif -0.005 <= dist_pct <= 0: 
+                state_color = "#00ff00" # ירוק - CHOCH/היפוך
+                status_text = "איתות כניסה: פריצת שווא אושרה"
+            elif 0 < dist_pct <= 0.005: 
+                state_color = "#ffcc00" # צהוב - מתקרב
+                status_text = "מתקרב להתנגדות - היכון"
+            else:
+                state_color = "#ffffff"
+                status_text = "המחיר מתחת לקו"
+            
+            results.append({
+                'lev': lev, 'base': base, 
+                'target_lev': target_lev, 'curr_lev': curr_lev,
+                'target_res': target_res, 'curr_base': curr_base,
+                'color': state_color, 'status': status_text, 'dist_pct': dist_pct
+            })
         except Exception as e:
             continue # דילוג שקט במקרה של שגיאת רשת
     return results
@@ -570,11 +575,13 @@ if reversal_data:
             st.markdown(f"<div style='border:2px solid {border_color}; padding:10px; border-radius:5px;'>", unsafe_allow_html=True)
             st.markdown(f"#### {data['lev']} <span style='color:green; font-size:16px;'>[שער יעד: {data['target_lev']:.2f}$]</span>", unsafe_allow_html=True)
             st.markdown(f"שער נוכחי: **{data['curr_lev']:.2f}$**")
-            st.markdown(f"<small>מבוסס על התנגדות {data['base']} ב-{data['target_res']:.2f}$ (מרחק: {data['dist_pct']*100:.2f}%)</small>", unsafe_allow_html=True)
+            st.markdown(f"<small>מבוסס על קו קמרילה ({data['base']}) ב-{data['target_res']:.2f}$ (מרחק: {data['dist_pct']*100:.2f}%)</small>", unsafe_allow_html=True)
             st.markdown(f"<span style='color:{data['color']}; font-weight:bold;'>{data['status']}</span>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("ממתין לנתוני מסחר לחילוץ רמות נזילות...")
+
+# ==========================================
 
 # ==========================================
 # פקודות רענון סיום הקובץ
