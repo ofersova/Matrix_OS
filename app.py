@@ -324,16 +324,27 @@ try:
     if isinstance(hist_market.columns, pd.MultiIndex):
         hist_market.columns = [f"{col[0]}_{col[1]}" for col in hist_market.columns]
     
-    spy_closes = hist_market['Close_SPY'].dropna().values
-    vix_val = float(hist_market['Close_^VIX'].dropna().iloc[-1])
-    tnx_val = float(hist_market['Close_^TNX'].dropna().iloc[-1])
-    oil_price = float(hist_market['Close_CL=F'].dropna().iloc[-1])
+    # פונקציה פנימית לחילוץ בטוח גם כשיש חוסר בנתונים מהבורסה
+    def safe_extract(col_name, default_value):
+        if col_name in hist_market.columns:
+            series = hist_market[col_name].dropna()
+            if not series.empty:
+                return float(series.iloc[-1])
+        return default_value
+
+    if 'Close_SPY' in hist_market.columns:
+        spy_closes = hist_market['Close_SPY'].dropna().values
+        if len(spy_closes) > 0:
+            hurst_spy = calculate_hurst(spy_closes)
+            
+    vix_val = safe_extract('Close_^VIX', 20.0)
+    tnx_val = safe_extract('Close_^TNX', 4.0)
+    oil_price = safe_extract('Close_CL=F', 75.0)
     
-    hurst_spy = calculate_hurst(spy_closes)
     erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
     term_structure = "Backwardation" if oil_price > 80 else "Contango"
 except Exception as e:
-    pass # במקרה של תקלת רשת, המערכת תשתמש בערכי ברירת המחדל שהוגדרו מראש למעלה
+    pass # במקרה קיצון נמשיך עם ערכי ברירת המחדל
 
 current_day = now_dt.day
 current_month = now_dt.month
