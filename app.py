@@ -495,6 +495,8 @@ if matrix_table_data:
 
     st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
 
+st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+
 st.markdown("---")
 
 # ==========================================
