@@ -439,11 +439,7 @@ matrix_sectors = {
     'XLU': {'name': 'תשתיות (XLU)', 'long_3x': 'UTSL', 'short_3x': 'XLU', 'base_weight': 15 if erp_stress > 0.25 else 0},
     'XLI': {'name': 'תעשייה (XLI)', 'long_3x': 'DUSL', 'short_3x': 'XLI', 'base_weight': -10 if erp_stress > 0.25 else 0},
     'XLY': {'name': 'צריכה מחזורית (XLY)', 'long_3x': 'WANT', 'short_3x': 'XLY', 'base_weight': -10 if erp_stress > 0.25 else 0},
-    'XLP': {'name': 'צריכה בסיסית (XLP)', 'long_3x': 'NEED', 'short_3x': 'XLP', 'base_weight': 10 if erp_stress > 0.25 else 0},
-    'XLB': {'name': 'חומרי גלם (XLB)', 'long_3x': 'XLB', 'short_3x': 'XLB', 'base_weight': 0},
-    'URA': {'name': 'גרעין (URA)', 'long_3x': 'URA', 'short_3x': 'URA', 'base_weight': 10 if "Backwardation" in term_structure else 0},
-    'QTUM': {'name': 'קוואנטום (QTUM)', 'long_3x': 'QTUM', 'short_3x': 'QTUM', 'base_weight': -5 if erp_stress > 0.25 else 0},
-    'ARKX': {'name': 'חלל (ARKX)', 'long_3x': 'ARKX', 'short_3x': 'ARKX', 'base_weight': -5 if erp_stress > 0.25 else 0}
+    'XLP': {'name': 'צריכה בסיסית (XLP)', 'long_3x': 'NEED', 'short_3x': 'XLP', 'base_weight': 10 if erp_stress > 0.25 else 0}
 }
 
 matrix_table_data = []
@@ -462,43 +458,15 @@ for ticker, info in matrix_sectors.items():
             base_w = info['base_weight']
             rsi_w = 50.0 - rsi
             
-            cal_w = 0
-            if is_tom_active: cal_w = 25
-            elif is_pre_tom_active: cal_w = -25
-            
-            confluence_score = base_w + rsi_w + cal_w
+            confluence_score = base_w + rsi_w
             
             if hurst_spy < 0.5: confluence_score *= 1.5 
-            if is_gann_window: confluence_score *= 1.2
             
-            lead_reason = ""
-            is_macro_aligned = False
-            
-            if ticker in ['XLF'] and tnx_val > 4.2: 
-                lead_reason, is_macro_aligned = "TNX זינוק", (confluence_score > 0)
-            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
-                lead_reason, is_macro_aligned = "TNX לחץ", (confluence_score < 0)
-            elif ticker in ['XLE', 'URA'] and "Backwardation" in term_structure: 
-                lead_reason, is_macro_aligned = "נפט/אנרגיה", (confluence_score > 0)
-            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress < 0.25: 
-                lead_reason, is_macro_aligned = "Risk-On (שוק)", (confluence_score > 0)
-            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress > 0.25: 
-                lead_reason, is_macro_aligned = "Risk-Off (לחץ)", (confluence_score < 0)
-            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress > 0.25:
-                lead_reason, is_macro_aligned = "הגנה מוסדית", (confluence_score > 0)
-            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress < 0.25:
-                lead_reason, is_macro_aligned = "נטישת הגנות", (confluence_score < 0)
-            else: 
-                lead_reason, is_macro_aligned = "זרימה פנימית", False
-
             sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
             sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
-            sym_gann = "⏳" if is_gann_window else "➖"
-            sym_tom = "📅" if cal_w != 0 else "➖"
-            sym_lead = "🧭" if is_macro_aligned else "➖"
             sym_macro = "🌍" if base_w != 0 else "➖"
             
-            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_lead} {sym_macro}"
+            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_macro}"
             
             if confluence_score > 25:
                 status_text = f"🟢 +{confluence_score:.1f} (לונג)"
@@ -506,12 +474,6 @@ for ticker, info in matrix_sectors.items():
             elif confluence_score < -25:
                 status_text = f"🔴 {confluence_score:.1f} (שורט)"
                 trigger_text = f"{info['short_3x']}"
-            elif confluence_score > 10:
-                status_text = f"⚪ +{confluence_score:.1f}"
-                trigger_text = "--"
-            elif confluence_score < -10:
-                status_text = f"⚪ {confluence_score:.1f}"
-                trigger_text = "--"
             else:
                 status_text = f"⚪ {confluence_score:.1f}"
                 trigger_text = "--"
@@ -522,10 +484,6 @@ for ticker, info in matrix_sectors.items():
                 "סקטור\n(בסיס)": info['name'],
                 "קפיץ\nמשוקלל": status_text,
                 "🔥 (RSI)\nמתיחת מיקרו": f"{rsi_w:+.1f}",
-                "📉 (Hurst)\nמכפיל הגנה": hurst_mult_str,
-                "⏳ (Gann)\nתזמון": gann_mult_str,
-                "📅 (TOM)\nעונתיות": f"{cal_w:+d}",
-                "🧭 (Lead)\nאיתות": lead_reason,
                 "🌍 (Macro)\nמשקל": f"{base_w:+d}",
                 "score": confluence_score
             })
@@ -536,31 +494,13 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
-    df_matrix = df_matrix[[
-        'פאנל חיווי',
-        'הדק\n(ביצוע)',
-        'סקטור\n(בסיס)',
-        'קפיץ\nמשוקלל',
-        '🔥 (RSI)\nמתיחת מיקרו',
-        '📉 (Hurst)\nמכפיל הגנה',
-        '⏳ (Gann)\nתזמון',
-        '📅 (TOM)\nעונתיות',
-        '🧭 (Lead)\nאיתות',
-        '🌍 (Macro)\nמשקל'
-    ]]
-
     def style_matrix(row):
         styles = [''] * len(row)
         score_val = str(row['קפיץ\nמשוקלל'])
-        sym_panel = str(row['פאנל חיווי'])
-        
-        active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
-        
-        if active_symbols >= 3:
-            if "לונג" in score_val: 
-                return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
-            elif "שורט" in score_val: 
-                return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+        if "לונג" in score_val: 
+            return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+        elif "שורט" in score_val: 
+            return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
         return styles
 
     st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
@@ -691,4 +631,178 @@ def get_pro_state_machine_targets():
             short_tick = matrix_sectors[base]['short_3x']
             
             curr_long = get_last_price(lev_data, long_tick) if long_tick != '--' else 0.0
-            curr_short = get_last_price(lev_data, short_tick) if short_tick !=
+            curr_short = get_last_price(lev_data, short_tick) if short_tick != '--' else 0.0
+            
+            if curr_long == 0 and curr_short == 0: continue
+            
+            def calc_lev_target(res_price, lev_price, is_long_asset):
+                dist = (res_price - curr_base) / curr_base
+                mult = 3 if is_long_asset else -3
+                if is_long_asset and long_tick == base: mult = 1
+                if not is_long_asset and short_tick == base: mult = -1
+                return dist, lev_price * (1 + (dist * mult))
+            
+            state_color = "white"
+            direction = "--"
+            target_lev_tick = "--"
+            target_lev_price = "--"
+            target_poc_price = "--"
+            active_res = "--"
+            dist_pct = 0.0
+            lvn_status = "➖"
+            
+            # לוגיקת Smart Money + שילוב אימות LVN
+            if curr_base > VAH:
+                state_color = "orange"
+                status_text = "🚨 איסוף נזילות מעל התנגדות (VAH)"
+                direction = "שורט"
+                target_lev_tick = f"{short_tick}\n({curr_short:.2f}$)"
+                dist_pct, target_lev_price = calc_lev_target(VAH, curr_short, False)
+                _, target_poc_price = calc_lev_target(poc_price, curr_short, False)
+                active_res = f"VAH\n({VAH:.2f}$)"
+                lvn_status = "✅ מאושר (נפח דליל)" if is_hod_lvn else "❌ נדחה (נפח גבוה בפריצה)"
+                
+            elif curr_base < VAH and HOD > VAH:
+                if is_hod_lvn:
+                    state_color = "green"
+                    status_text = "✅ פריצת שווא אושרה (CHOCH)"
+                    direction = "שורט"
+                    target_lev_tick = f"{short_tick}\n({curr_short:.2f}$)"
+                    dist_pct, target_lev_price = calc_lev_target(VAH, curr_short, False)
+                    _, target_poc_price = calc_lev_target(poc_price, curr_short, False)
+                    active_res = f"VAH\n({VAH:.2f}$)"
+                    lvn_status = "✅ מאושר (נפח דליל)"
+                else:
+                    state_color = "white"
+                    status_text = "⚪ חזרה מפריצה מגמתית (אין CHOCH)"
+                    direction = "ניטרלי"
+                    target_lev_tick = "--"
+                    active_res = f"VAH\n({VAH:.2f}$)"
+                    lvn_status = "❌ נדחה (נפח גבוה בפריצה)"
+                
+            elif curr_base < VAL:
+                state_color = "orange"
+                status_text = "🚨 איסוף נזילות מתחת לתמיכה (VAL)"
+                direction = "לונג"
+                target_lev_tick = f"{long_tick}\n({curr_long:.2f}$)"
+                dist_pct, target_lev_price = calc_lev_target(VAL, curr_long, True)
+                _, target_poc_price = calc_lev_target(poc_price, curr_long, True)
+                active_res = f"VAL\n({VAL:.2f}$)"
+                lvn_status = "✅ מאושר (נפח דליל)" if is_lod_lvn else "❌ נדחה (נפח גבוה בשבירה)"
+                
+            elif curr_base > VAL and LOD < VAL:
+                if is_lod_lvn:
+                    state_color = "green"
+                    status_text = "✅ שבירת שווא אושרה (CHOCH)"
+                    direction = "לונג"
+                    target_lev_tick = f"{long_tick}\n({curr_long:.2f}$)"
+                    dist_pct, target_lev_price = calc_lev_target(VAL, curr_long, True)
+                    _, target_poc_price = calc_lev_target(poc_price, curr_long, True)
+                    active_res = f"VAL\n({VAL:.2f}$)"
+                    lvn_status = "✅ מאושר (נפח דליל)"
+                else:
+                    state_color = "white"
+                    status_text = "⚪ התאוששות ממגמת ירידה (אין CHOCH)"
+                    direction = "ניטרלי"
+                    target_lev_tick = "--"
+                    active_res = f"VAL\n({VAL:.2f}$)"
+                    lvn_status = "❌ נדחה (נפח גבוה בשבירה)"
+                
+            elif abs(curr_base - poc_price) / curr_base <= 0.005:
+                state_color = "yellow"
+                status_text = "⚖️ נתמך על ליבת הנזילות (POC)"
+                direction = "ניטרלי"
+                target_lev_tick = "--"
+                dist_pct = (poc_price - curr_base) / curr_base
+                active_res = f"POC\n({poc_price:.2f}$)"
+                
+            else:
+                state_color = "white"
+                status_text = "⚪ ממתין לפריצה בתוך אזור הערך"
+                direction = "ניטרלי"
+                target_lev_tick = "--"
+                active_res = f"VAH ({VAH:.0f}$) | VAL ({VAL:.0f}$)"
+                
+            results.append({
+                'base': base, 'curr_base': curr_base, 'direction': direction,
+                'status': status_text, 'color': state_color,
+                'target_tick': target_lev_tick, 
+                'active_res': active_res, 'dist': dist_pct,
+                't1': target_lev_price, 't2': target_poc_price,
+                'lvn': lvn_status
+            })
+        except Exception as e:
+            continue
+    return results
+
+pro_data = get_pro_state_machine_targets()
+
+if pro_data:
+    pro_table = []
+    for d in pro_data:
+        t1_str = f"[{d['t1']:.2f}$]" if isinstance(d['t1'], float) else "--"
+        t2_str = f"[{d['t2']:.2f}$]" if isinstance(d['t2'], float) else "--"
+        dist_str = f"{d['dist']*100:.2f}%" if d['dist'] != 0.0 else "--"
+        
+        pro_table.append({
+            "סקטור (בסיס)": f"{matrix_sectors[d['base']]['name']}\n({d['curr_base']:.2f}$)",
+            "כיוון": d['direction'],
+            "איתות מוסדי (Smart Money)": d['status'],
+            "נפח בקצה (LVN)": d['lvn'],
+            "נכס ביצוע": d['target_tick'],
+            "קו מבחן": d['active_res'],
+            "מרחק": dist_str,
+            "יעד 1": t1_str,
+            "יעד 2 (POC)": t2_str,
+            "_color": d['color']
+        })
+        
+    df_pro = pd.DataFrame(pro_table)
+    
+    color_list = df_pro['_color'].tolist()
+    df_pro_clean = df_pro.drop(columns=['_color'])
+    
+    def style_pro_matrix(row):
+        color = color_list[row.name]
+        styles = [''] * len(row)
+        if color == 'green':
+            return ['background-color: rgba(0, 255, 0, 0.15); border-bottom: 1px solid #00ff00;'] * len(row)
+        elif color == 'orange':
+            return ['background-color: rgba(255, 165, 0, 0.15); border-bottom: 1px solid orange;'] * len(row)
+        elif color == 'yellow':
+            return ['background-color: rgba(255, 255, 0, 0.15); border-bottom: 1px solid yellow;'] * len(row)
+        return styles
+        
+    styled_pro = df_pro_clean.style.set_properties(**{
+        'font-size': '15px',
+        'text-align': 'center',
+        'white-space': 'pre-wrap'
+    }).set_table_styles([
+        dict(selector='th', props=[('font-size', '15px'), ('text-align', 'center')])
+    ]).apply(style_pro_matrix, axis=1)
+    
+    st.dataframe(
+        styled_pro, 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "סקטור (בסיס)": st.column_config.TextColumn(width="medium"),
+            "כיוון": st.column_config.TextColumn(width="small"),
+            "איתות מוסדי (Smart Money)": st.column_config.TextColumn(width="large"),
+            "נפח בקצה (LVN)": st.column_config.TextColumn(width="medium"),
+            "נכס ביצוע": st.column_config.TextColumn(width="small"),
+            "קו מבחן": st.column_config.TextColumn(width="small"),
+            "מרחק": st.column_config.TextColumn(width="small"),
+            "יעד 1": st.column_config.TextColumn(width="small"),
+            "יעד 2 (POC)": st.column_config.TextColumn(width="small"),
+        },
+        height=650
+    )
+else:
+    st.info("⚠️ ממתין לנתוני מסחר לחילוץ רמות PRO (ייתכן עיכוב ברשת)...")
+
+# ==========================================
+# פקודות רענון סיום הקובץ
+# ==========================================
+time.sleep(15)
+st.rerun()
