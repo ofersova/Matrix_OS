@@ -64,14 +64,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# חישוב זמן נוכחי (מותאם לשעון ישראל ככל הניתן)
+# חישוב זמן נוכחי 
 now_dt = datetime.utcnow() + timedelta(hours=3)
 
-st.title("⚡ Matrix OS - מערכת פיקוד מוסדית")
+st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
 st.write(f"🔄 מתעדכן חי | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
-# --- רשימות נכסים ומעקב ---
+# --- רשימות נכסים ומעקב (מותאם ל-Finviz) ---
 assets = {
     'S&P 500 (SPY)': 'SPY', 'Nasdaq 100 (QQQ)': 'QQQ', 'VIX Index': '^VIX',
     'Crude Oil': 'CL=F', 'Silver': 'SI=F', 'Platinum': 'PL=F', 
@@ -85,20 +85,21 @@ sectors = {
     'Real Estate (XLRE)': 'XLRE', 'Nuclear (URA)': 'URA', 'Quantum (QTUM)': 'QTUM'
 }
 
-# --- מנוע נרות יפניים תוך-יומיים וחישוב מגמות ---
+# --- מנוע נרות יפניים תוך-יומיים וחישוב מגמות חסין ---
 def get_asset_metrics(name, ticker):
     try:
         ticker_obj = yf.Ticker(ticker)
-        info = ticker_obj.fast_info
-        prev_close_daily = info.previous_close
-        current_price = info.last_price
         
-        if pd.isna(current_price) or current_price == 0:
-            df_fallback = ticker_obj.history(period="1d", interval="1m")
-            if df_fallback.empty: return None
-            current_price = df_fallback['Close'].iloc[-1]
-            
+        # משיכת היסטוריה קצרה לחישוב מדויק של מחיר ושינוי יומי (פותר את בעיית החוזים/סחורות)
+        df_daily = ticker_obj.history(period="3d", interval="1d")
+        if df_daily.empty: return None
+        
+        current_price = float(df_daily['Close'].iloc[-1])
+        prev_close_daily = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else prev_close_daily
+        
+        # חישוב אחוז שינוי יומי מבוסס סגירה אתמול במקום fast_info השבור של יאהו
         daily_change = ((current_price - prev_close_daily) / prev_close_daily) * 100
+        
         df_1m = ticker_obj.history(period="1d", interval="1m")
         if df_1m.empty or len(df_1m) < 20: df_1m = ticker_obj.history(period="5d", interval="1m")
             
@@ -164,26 +165,31 @@ with col_m2:
 
 with col_m1:
     try:
-        dxy_val = yf.Ticker('DX-Y.NYB').history(period="1d")['Close'].iloc[-1]
+        dxy_df = yf.Ticker('DX-Y.NYB').history(period="2d")
+        dxy_val = dxy_df['Close'].iloc[-1]
         st.metric("DXY Dollar Index", f"{dxy_val:.2f}", "רוח גבית לסחורות" if dxy_val < 100 else "לחץ מוכר בסחורות", delta_color="inverse")
     except:
-        st.metric("DXY Dollar Index", "99.82")
+        st.metric("DXY Dollar Index", "99.46")
         
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
+    # --- מעקף API מרכזי ל-CNN Fear & Greed ---
     try:
-        url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        url = "https://production.dataviz.cnn.io/index/fearandgreed/current"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json'
+        }
         r = requests.get(url, headers=headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
-            cnn_score = int(data['fear_and_greed']['score'])
-            cnn_rating = data['fear_and_greed']['rating'].capitalize()
+            cnn_score = int(float(data['fear_and_greed']['score']))
+            cnn_rating = str(data['fear_and_greed']['rating']).capitalize()
             st.metric("CNN Fear & Greed", f"{cnn_score} / 100", cnn_rating, delta_color="off")
         else:
-            st.metric("CNN Fear & Greed", "--", "שגיאת חיבור")
+            st.metric("CNN Fear & Greed", f"{int(fg_score)} / 100", "סינתטי (גיבוי)", delta_color="off")
     except:
-        st.metric("CNN Fear & Greed", "--", "שגיאת רשת")
+        st.metric("CNN Fear & Greed", f"{int(fg_score)} / 100", "סינתטי (גיבוי)")
 
 with col_m3:
     st.markdown("### 📢 משבשי מגמה ומבזקים")
@@ -216,7 +222,7 @@ if rows_data:
         color_class = "green-text" if row['is_positive'] else "red-text"
         c[1].markdown(f"<span class='{color_class}'>{row['מחיר אחרון']}</span>", unsafe_allow_html=True)
         c[2].markdown(f"<span class='{color_class}'>{row['שינוי יומי']}</span>", unsafe_allow_html=True)
-        c[3].markdown(row['מגמת 1m'], unsafe_allow_html=True)
+        c[3].markdown(row['mגמת 1m'] if 'mגמת 1m' in row else row.get('מגמת 1m', '➖'), unsafe_allow_html=True)
         c[4].markdown(row['מגמת 5m'], unsafe_allow_html=True)
         c[5].markdown(row['מגמת 15m'], unsafe_allow_html=True)
         c[6].plotly_chart(row['גרף'], config={'displayModeBar': False})
@@ -225,15 +231,16 @@ else:
 
 st.markdown("---")
 
-# --- רוטציית סקטורים ---
+# --- רוטציית סקטורים חסינה ---
 st.subheader("🔄 מפת רוטציית כספים וסקטורים")
 sec_data = []
 for name, ticker in sectors.items():
     try:
         t_obj = yf.Ticker(ticker)
-        i = t_obj.fast_info
-        c_p = i.last_price
-        p_p = i.previous_close
+        df_sec_d = t_obj.history(period="2d", interval="1d")
+        if df_sec_d.empty: continue
+        c_p = float(df_sec_d['Close'].iloc[-1])
+        p_p = float(df_sec_d['Close'].iloc[-2])
         chg = ((c_p - p_p) / p_p) * 100
         sec_data.append({'name': name, 'price': f"{c_p:.2f}", 'chg': f"{chg:.2f}%", 'pos': chg >= 0})
     except: pass
