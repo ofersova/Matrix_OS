@@ -261,7 +261,6 @@ if rows_data:
     cols[0].markdown("**שם הנכס**")
     cols[1].markdown("**מחיר**")
     cols[2].markdown("**שינוי יומי**")
-    # סידור העמודות כפי שביקשת: 15 דקות משמאל, 1 דקה מימין
     cols[3].markdown("**15 דק'**")
     cols[4].markdown("**5 דק'**")
     cols[5].markdown("**1 דק'**")
@@ -424,7 +423,7 @@ col_mac4.metric("📅 סטטוס קלנדרי", "TOM פעיל" if is_tom_active 
 
 st.markdown("<hr style='border: 1px solid #333;'>", unsafe_allow_html=True)
 
-# --- טבלת סנכרון המקורית (Matrix) ---
+# --- טבלת סנכרון המקורית משוחזרת במלואה מגרסה 15 ---
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
 
 matrix_sectors = {
@@ -458,15 +457,46 @@ for ticker, info in matrix_sectors.items():
             base_w = info['base_weight']
             rsi_w = 50.0 - rsi
             
-            confluence_score = base_w + rsi_w
+            cal_w = 0
+            if is_tom_active: cal_w = 25
+            elif is_pre_tom_active: cal_w = -25
+            
+            confluence_score = base_w + rsi_w + cal_w
+            
+            hurst_mult_str = "x1.5" if hurst_spy < 0.5 else "x1.0"
+            gann_mult_str = "x1.2" if is_gann_window else "x1.0"
             
             if hurst_spy < 0.5: confluence_score *= 1.5 
+            if is_gann_window: confluence_score *= 1.2
             
+            lead_reason = ""
+            is_macro_aligned = False
+            
+            if ticker in ['XLF'] and tnx_val > 4.2: 
+                lead_reason, is_macro_aligned = "TNX זינוק", (confluence_score > 0)
+            elif ticker in ['IWM', 'XLRE'] and tnx_val > 4.2: 
+                lead_reason, is_macro_aligned = "TNX לחץ", (confluence_score < 0)
+            elif ticker in ['XLE', 'URA'] and "Backwardation" in term_structure: 
+                lead_reason, is_macro_aligned = "נפט/אנרגיה", (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress < 0.25: 
+                lead_reason, is_macro_aligned = "Risk-On (שוק)", (confluence_score > 0)
+            elif ticker in ['QQQ', 'SOXX', 'XLY', 'XLI', 'QTUM', 'ARKX'] and erp_stress > 0.25: 
+                lead_reason, is_macro_aligned = "Risk-Off (לחץ)", (confluence_score < 0)
+            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress > 0.25:
+                lead_reason, is_macro_aligned = "הגנה מוסדית", (confluence_score > 0)
+            elif ticker in ['XLU', 'XLP', 'XLV'] and erp_stress < 0.25:
+                lead_reason, is_macro_aligned = "נטישת הגנות", (confluence_score < 0)
+            else: 
+                lead_reason, is_macro_aligned = "זרימה פנימית", False
+
             sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
             sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
+            sym_gann = "⏳" if is_gann_window else "➖"
+            sym_tom = "📅" if cal_w != 0 else "➖"
+            sym_lead = "🧭" if is_macro_aligned else "➖"
             sym_macro = "🌍" if base_w != 0 else "➖"
             
-            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_macro}"
+            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_lead} {sym_macro}"
             
             if confluence_score > 25:
                 status_text = f"🟢 +{confluence_score:.1f} (לונג)"
@@ -474,6 +504,12 @@ for ticker, info in matrix_sectors.items():
             elif confluence_score < -25:
                 status_text = f"🔴 {confluence_score:.1f} (שורט)"
                 trigger_text = f"{info['short_3x']}"
+            elif confluence_score > 10:
+                status_text = f"⚪ +{confluence_score:.1f}"
+                trigger_text = "--"
+            elif confluence_score < -10:
+                status_text = f"⚪ {confluence_score:.1f}"
+                trigger_text = "--"
             else:
                 status_text = f"⚪ {confluence_score:.1f}"
                 trigger_text = "--"
@@ -484,6 +520,10 @@ for ticker, info in matrix_sectors.items():
                 "סקטור\n(בסיס)": info['name'],
                 "קפיץ\nמשוקלל": status_text,
                 "🔥 (RSI)\nמתיחת מיקרו": f"{rsi_w:+.1f}",
+                "📉 (Hurst)\nמכפיל הגנה": hurst_mult_str,
+                "⏳ (Gann)\nתזמון": gann_mult_str,
+                "📅 (TOM)\nעונתיות": f"{cal_w:+d}",
+                "🧭 (Lead)\nאיתות": lead_reason,
                 "🌍 (Macro)\nמשקל": f"{base_w:+d}",
                 "score": confluence_score
             })
@@ -494,16 +534,38 @@ if matrix_table_data:
     df_matrix['abs_score'] = df_matrix['score'].abs()
     df_matrix = df_matrix.sort_values(by='abs_score', ascending=False).drop(columns=['abs_score', 'score'])
     
+    # סידור העמודות בדיוק כמו בגרסה 15 המקורית שצירפת
+    df_matrix = df_matrix[[
+        'פאנל חיווי',
+        'הדק\n(ביצוע)',
+        'סקטור\n(בסיס)',
+        'קפיץ\nמשוקלל',
+        '🔥 (RSI)\nמתיחת מיקרו',
+        '📉 (Hurst)\nמכפיל הגנה',
+        '⏳ (Gann)\nתזמון',
+        '📅 (TOM)\nעונתיות',
+        '🧭 (Lead)\nאיתות',
+        '🌍 (Macro)\nמשקל'
+    ]]
+
     def style_matrix(row):
         styles = [''] * len(row)
         score_val = str(row['קפיץ\nמשוקלל'])
-        if "לונג" in score_val: 
-            return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
-        elif "שורט" in score_val: 
-            return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
+        sym_panel = str(row['פאנל חיווי'])
+        
+        # צביעת השורה רק אם יש מספיק אינדיקטורים פעילים (3 ומעלה)
+        active_symbols = len([s for s in sym_panel if s not in ["➖", "\u200E", " "]])
+        
+        if active_symbols >= 3:
+            if "לונג" in score_val: 
+                return ['background-color: rgba(0, 255, 0, 0.1); border-bottom: 1px solid #00ff00;'] * len(row)
+            elif "שורט" in score_val: 
+                return ['background-color: rgba(255, 0, 0, 0.1); border-bottom: 1px solid #ff0000;'] * len(row)
         return styles
 
     st.dataframe(df_matrix.style.apply(style_matrix, axis=1), use_container_width=True, hide_index=True)
+else:
+    st.warning("⚠️ לא התקבלו נתונים לבניית מטריצת הצלפים עקב חסימת רשת זמנית. המערכת תבצע ניסיון חוזר.")
 
 st.markdown("---")
 
