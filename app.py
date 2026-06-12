@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
 import requests
-import pandas_market_calendars as mcal
 
 # --- פונקציות מתמטיות של צינור הנתונים המוסדי ---
 @st.cache_data(ttl=3600)
@@ -65,9 +64,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-now_dt = datetime.now()
+# חישוב זמן נוכחי (מותאם לשעון ישראל ככל הניתן)
+now_dt = datetime.utcnow() + timedelta(hours=3)
 
-st.title("⚡ Matrix OS - מערכת פיקוד מוסדית (גרסת נרות יפניים)")
+st.title("⚡ Matrix OS - מערכת פיקוד מוסדית")
 st.write(f"🔄 מתעדכן חי | זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
@@ -173,8 +173,8 @@ with col_m1:
     
     try:
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        r = requests.get(url, headers=headers, timeout=10)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.get(url, headers=headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             cnn_score = int(data['fear_and_greed']['score'])
@@ -261,8 +261,6 @@ all_events = [
 ]
 
 filtered_events = []
-is_quiet_hours = (now_dt.weekday() == 4 and now_dt.hour >= 18) or (now_dt.weekday() == 5 and now_dt.hour < 21)
-
 for ev in all_events:
     if ev["תאריך"] == today_date: day_label = "Today"
     elif ev["תאריך"] == tomorrow_date: day_label = "Tomorrow"
@@ -278,7 +276,7 @@ for ev in all_events:
         ev_datetime = now_dt.replace(year=ev["תאריך"].year, month=ev["תאריך"].month, day=ev["תאריך"].day, hour=ev_hour, minute=ev_min, second=0, microsecond=0)
         time_difference = ev_datetime - now_dt
         if ev["תאריך"] == today_date and timedelta(minutes=0) <= time_difference <= timedelta(minutes=30):
-            if not is_quiet_hours: is_approaching = True
+            is_approaching = True
     except: pass
 
     filtered_events.append({
@@ -382,11 +380,7 @@ matrix_sectors = {
     'XLU': {'name': 'תשתיות (XLU)', 'long_3x': 'UTSL', 'short_3x': 'XLU', 'base_weight': 15 if erp_stress > 0.25 else 0},
     'XLI': {'name': 'תעשייה (XLI)', 'long_3x': 'DUSL', 'short_3x': 'XLI', 'base_weight': -10 if erp_stress > 0.25 else 0},
     'XLY': {'name': 'צריכה מחזורית (XLY)', 'long_3x': 'WANT', 'short_3x': 'XLY', 'base_weight': -10 if erp_stress > 0.25 else 0},
-    'XLP': {'name': 'צריכה בסיסית (XLP)', 'long_3x': 'NEED', 'short_3x': 'XLP', 'base_weight': 10 if erp_stress > 0.25 else 0},
-    'XLB': {'name': 'חומרי גלם (XLB)', 'long_3x': 'XLB', 'short_3x': 'XLB', 'base_weight': 0},
-    'URA': {'name': 'גרעין (URA)', 'long_3x': 'URA', 'short_3x': 'URA', 'base_weight': 10 if "Backwardation" in term_structure else 0},
-    'QTUM': {'name': 'קוואנטום (QTUM)', 'long_3x': 'QTUM', 'short_3x': 'QTUM', 'base_weight': -5 if erp_stress > 0.25 else 0},
-    'ARKX': {'name': 'חלל (ARKX)', 'long_3x': 'ARKX', 'short_3x': 'ARKX', 'base_weight': -5 if erp_stress > 0.25 else 0}
+    'XLP': {'name': 'צריכה בסיסית (XLP)', 'long_3x': 'NEED', 'short_3x': 'XLP', 'base_weight': 10 if erp_stress > 0.25 else 0}
 }
 
 matrix_table_data = []
@@ -405,21 +399,15 @@ for ticker, info in matrix_sectors.items():
             base_w = info['base_weight']
             rsi_w = 50.0 - rsi
             
-            cal_w = 0
-            if is_tom_active: cal_w = 25
-            elif is_pre_tom_active: cal_w = -25
+            confluence_score = base_w + rsi_w
             
-            confluence_score = base_w + rsi_w + cal_w
             if hurst_spy < 0.5: confluence_score *= 1.5 
-            if is_gann_window: confluence_score *= 1.2
             
             sym_rsi = "🔥" if abs(rsi_w) > 10 else "➖"
             sym_hurst = "📉" if hurst_spy < 0.5 else "➖"
-            sym_gann = "⏳" if is_gann_window else "➖"
-            sym_tom = "📅" if cal_w != 0 else "➖"
             sym_macro = "🌍" if base_w != 0 else "➖"
             
-            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_gann} {sym_tom} {sym_macro}"
+            sym_panel = f"\u200E{sym_rsi} {sym_hurst} {sym_macro}"
             
             if confluence_score > 25:
                 status_text = f"🟢 +{confluence_score:.1f} (לונג)"
@@ -461,9 +449,9 @@ if matrix_table_data:
 st.markdown("---")
 
 # ==========================================
-# --- תוסף זירת צלפים מוסדית PRO המורחב ---
+# --- תוסף זירת צלפים מוסדית PRO המורחב (LVN & CHOCH) ---
 # ==========================================
-st.subheader("🎯 טבלת צלפים PRO (מכונת מצבים לזיהוי שבירות ופריצות שווא - כל הסקטורים)")
+st.subheader("🎯 טבלת צלפים PRO (מכונת מצבים ואימות נפחי קצה - LVN)")
 
 @st.cache_data(ttl=120)
 def get_pro_state_machine_targets():
@@ -475,7 +463,6 @@ def get_pro_state_machine_targets():
         
     lev_tickers = list(lev_tickers_set)
     
-    # משיכה מרוכזת כדי לחסוך קריאות רשת
     intra_all = yf.download(bases, period="5d", interval="5m", progress=False)
     lev_data = yf.download(lev_tickers, period="1d", interval="1m", progress=False)
     
@@ -502,7 +489,6 @@ def get_pro_state_machine_targets():
     
     for base in bases:
         try:
-            # חילוץ מחירי בסיס מתוך הטבלה הגדולה
             if isinstance(intra_all.columns, pd.MultiIndex):
                 if ('Close', base) in intra_all.columns:
                     prices = intra_all[('Close', base)].dropna()
@@ -520,8 +506,6 @@ def get_pro_state_machine_targets():
             if prices.empty: continue
             
             curr_base = float(prices.iloc[-1])
-            
-            # דגימת הגבוה (HOD) והנמוך (LOD) היומי
             today_date = prices.index[-1].date()
             today_prices = prices[prices.index.date == today_date]
             
@@ -530,10 +514,8 @@ def get_pro_state_machine_targets():
                     try:
                         h_series = intra_all[('High', base)] if ('High', base) in intra_all.columns else intra_all[(base, 'High')]
                         l_series = intra_all[('Low', base)] if ('Low', base) in intra_all.columns else intra_all[(base, 'Low')]
-                        h_series = h_series.dropna()
-                        l_series = l_series.dropna()
-                        HOD = float(h_series[h_series.index.date == today_date].max())
-                        LOD = float(l_series[l_series.index.date == today_date].min())
+                        HOD = float(h_series.dropna()[h_series.dropna().index.date == today_date].max())
+                        LOD = float(l_series.dropna()[l_series.dropna().index.date == today_date].min())
                     except:
                         HOD, LOD = float(today_prices.max()), float(today_prices.min())
                 else:
@@ -541,7 +523,7 @@ def get_pro_state_machine_targets():
             else:
                 HOD, LOD = float(prices.max()), float(prices.min())
             
-            # חישוב 50 סלי נפח (Volume Profile)
+            # חישוב Volume Profile (50 Bins)
             bins = np.linspace(prices.min(), prices.max(), 50)
             digitized = np.digitize(prices, bins)
             vol_profile = np.zeros(len(bins)-1)
@@ -552,8 +534,10 @@ def get_pro_state_machine_targets():
                 
             poc_idx = np.argmax(vol_profile)
             poc_price = bin_centers[poc_idx]
+            poc_vol = vol_profile[poc_idx]
             
-            va_volume = vol_profile[poc_idx]
+            # חישוב Value Area (70%)
+            va_volume = poc_vol
             target_volume = vol_profile.sum() * 0.70
             upper_idx, lower_idx = poc_idx, poc_idx
             
@@ -561,10 +545,8 @@ def get_pro_state_machine_targets():
                 can_up = upper_idx < len(vol_profile) - 1
                 can_down = lower_idx > 0
                 if not can_up and not can_down: break
-                
                 vol_up = vol_profile[upper_idx + 1] if can_up else 0
                 vol_down = vol_profile[lower_idx - 1] if can_down else 0
-                
                 if vol_up >= vol_down and can_up:
                     upper_idx += 1
                     va_volume += vol_up
@@ -576,7 +558,16 @@ def get_pro_state_machine_targets():
             VAH = bin_centers[upper_idx]
             VAL = bin_centers[lower_idx]
             
-            # משיכת מחירי תעודות ממונפות
+            # בדיקת אימות נפח בקצה - האם הנפח בפסגה באמת היה דליל? (Low Volume Node)
+            hod_idx = np.clip(np.digitize([HOD], bins)[0] - 1, 0, len(vol_profile) - 1)
+            lod_idx = np.clip(np.digitize([LOD], bins)[0] - 1, 0, len(vol_profile) - 1)
+            
+            hod_vol = vol_profile[hod_idx]
+            lod_vol = vol_profile[lod_idx]
+            
+            is_hod_lvn = hod_vol < (poc_vol * 0.25)
+            is_lod_lvn = lod_vol < (poc_vol * 0.25)
+            
             long_tick = matrix_sectors[base]['long_3x']
             short_tick = matrix_sectors[base]['short_3x']
             
@@ -585,16 +576,12 @@ def get_pro_state_machine_targets():
             
             if curr_long == 0 and curr_short == 0: continue
             
-            # פונקציית המרה לנכס ממונף בהתאם לכיוון (לונג או שורט)
             def calc_lev_target(res_price, lev_price, is_long_asset):
                 dist = (res_price - curr_base) / curr_base
                 mult = 3 if is_long_asset else -3
-                # הגנה לסקטורים שהם 1x ללא מינוף (כמו XLB/URA)
                 if is_long_asset and long_tick == base: mult = 1
                 if not is_long_asset and short_tick == base: mult = -1
-                
-                target_price = lev_price * (1 + (dist * mult))
-                return dist, target_price
+                return dist, lev_price * (1 + (dist * mult))
             
             state_color = "white"
             direction = "--"
@@ -603,11 +590,9 @@ def get_pro_state_machine_targets():
             target_poc_price = "--"
             active_res = "--"
             dist_pct = 0.0
+            lvn_status = "➖"
             
-            # ==========================================
-            # מכונת מצבים (State Machine) - זיהוי מוסדי דו-כיווני
-            # ==========================================
-            
+            # לוגיקת Smart Money + שילוב אימות LVN
             if curr_base > VAH:
                 state_color = "orange"
                 status_text = "🚨 איסוף נזילות מעל התנגדות (VAH)"
@@ -616,15 +601,25 @@ def get_pro_state_machine_targets():
                 dist_pct, target_lev_price = calc_lev_target(VAH, curr_short, False)
                 _, target_poc_price = calc_lev_target(poc_price, curr_short, False)
                 active_res = f"VAH\n({VAH:.2f}$)"
+                lvn_status = "✅ מאושר (נפח דליל)" if is_hod_lvn else "❌ נדחה (נפח גבוה בפריצה)"
                 
             elif curr_base < VAH and HOD > VAH:
-                state_color = "green"
-                status_text = "✅ פריצת שווא אושרה (CHOCH)"
-                direction = "שורט"
-                target_lev_tick = f"{short_tick}\n({curr_short:.2f}$)"
-                dist_pct, target_lev_price = calc_lev_target(VAH, curr_short, False)
-                _, target_poc_price = calc_lev_target(poc_price, curr_short, False)
-                active_res = f"VAH\n({VAH:.2f}$)"
+                if is_hod_lvn:
+                    state_color = "green"
+                    status_text = "✅ פריצת שווא אושרה (CHOCH)"
+                    direction = "שורט"
+                    target_lev_tick = f"{short_tick}\n({curr_short:.2f}$)"
+                    dist_pct, target_lev_price = calc_lev_target(VAH, curr_short, False)
+                    _, target_poc_price = calc_lev_target(poc_price, curr_short, False)
+                    active_res = f"VAH\n({VAH:.2f}$)"
+                    lvn_status = "✅ מאושר (נפח דליל)"
+                else:
+                    state_color = "white"
+                    status_text = "⚪ חזרה מפריצה מגמתית (אין CHOCH)"
+                    direction = "ניטרלי"
+                    target_lev_tick = "--"
+                    active_res = f"VAH\n({VAH:.2f}$)"
+                    lvn_status = "❌ נדחה (נפח גבוה בפריצה)"
                 
             elif curr_base < VAL:
                 state_color = "orange"
@@ -634,15 +629,25 @@ def get_pro_state_machine_targets():
                 dist_pct, target_lev_price = calc_lev_target(VAL, curr_long, True)
                 _, target_poc_price = calc_lev_target(poc_price, curr_long, True)
                 active_res = f"VAL\n({VAL:.2f}$)"
+                lvn_status = "✅ מאושר (נפח דליל)" if is_lod_lvn else "❌ נדחה (נפח גבוה בשבירה)"
                 
             elif curr_base > VAL and LOD < VAL:
-                state_color = "green"
-                status_text = "✅ שבירת שווא אושרה (CHOCH)"
-                direction = "לונג"
-                target_lev_tick = f"{long_tick}\n({curr_long:.2f}$)"
-                dist_pct, target_lev_price = calc_lev_target(VAL, curr_long, True)
-                _, target_poc_price = calc_lev_target(poc_price, curr_long, True)
-                active_res = f"VAL\n({VAL:.2f}$)"
+                if is_lod_lvn:
+                    state_color = "green"
+                    status_text = "✅ שבירת שווא אושרה (CHOCH)"
+                    direction = "לונג"
+                    target_lev_tick = f"{long_tick}\n({curr_long:.2f}$)"
+                    dist_pct, target_lev_price = calc_lev_target(VAL, curr_long, True)
+                    _, target_poc_price = calc_lev_target(poc_price, curr_long, True)
+                    active_res = f"VAL\n({VAL:.2f}$)"
+                    lvn_status = "✅ מאושר (נפח דליל)"
+                else:
+                    state_color = "white"
+                    status_text = "⚪ התאוששות ממגמת ירידה (אין CHOCH)"
+                    direction = "ניטרלי"
+                    target_lev_tick = "--"
+                    active_res = f"VAL\n({VAL:.2f}$)"
+                    lvn_status = "❌ נדחה (נפח גבוה בשבירה)"
                 
             elif abs(curr_base - poc_price) / curr_base <= 0.005:
                 state_color = "yellow"
@@ -664,7 +669,8 @@ def get_pro_state_machine_targets():
                 'status': status_text, 'color': state_color,
                 'target_tick': target_lev_tick, 
                 'active_res': active_res, 'dist': dist_pct,
-                't1': target_lev_price, 't2': target_poc_price
+                't1': target_lev_price, 't2': target_poc_price,
+                'lvn': lvn_status
             })
         except Exception as e:
             continue
@@ -683,17 +689,17 @@ if pro_data:
             "סקטור (בסיס)": f"{matrix_sectors[d['base']]['name']}\n({d['curr_base']:.2f}$)",
             "כיוון": d['direction'],
             "איתות מוסדי (Smart Money)": d['status'],
+            "נפח בקצה (LVN)": d['lvn'],
             "נכס ביצוע": d['target_tick'],
             "קו מבחן": d['active_res'],
             "מרחק": dist_str,
-            "יעד כניסה 1": t1_str,
-            "יעד כניסה 2 (POC)": t2_str,
+            "יעד 1": t1_str,
+            "יעד 2 (POC)": t2_str,
             "_color": d['color']
         })
         
     df_pro = pd.DataFrame(pro_table)
     
-    # חילוץ בטוח של הצבעים הצידה למניעת קריסות (KeyError)
     color_list = df_pro['_color'].tolist()
     df_pro_clean = df_pro.drop(columns=['_color'])
     
@@ -708,7 +714,6 @@ if pro_data:
             return ['background-color: rgba(255, 255, 0, 0.15); border-bottom: 1px solid yellow;'] * len(row)
         return styles
         
-    # שימוש ב-Styler כדי להגדיל את הפונט ולמרכז את הטקסט
     styled_pro = df_pro_clean.style.set_properties(**{
         'font-size': '15px',
         'text-align': 'center',
@@ -717,7 +722,6 @@ if pro_data:
         dict(selector='th', props=[('font-size', '15px'), ('text-align', 'center')])
     ]).apply(style_pro_matrix, axis=1)
     
-    # הגדרות רוחב עמודות מתקדמות כדי לכווץ את העמודות ולהתאים אותן למסך
     st.dataframe(
         styled_pro, 
         use_container_width=True, 
@@ -726,11 +730,12 @@ if pro_data:
             "סקטור (בסיס)": st.column_config.TextColumn(width="medium"),
             "כיוון": st.column_config.TextColumn(width="small"),
             "איתות מוסדי (Smart Money)": st.column_config.TextColumn(width="large"),
+            "נפח בקצה (LVN)": st.column_config.TextColumn(width="medium"),
             "נכס ביצוע": st.column_config.TextColumn(width="small"),
             "קו מבחן": st.column_config.TextColumn(width="small"),
             "מרחק": st.column_config.TextColumn(width="small"),
-            "יעד כניסה 1": st.column_config.TextColumn(width="small"),
-            "יעד כניסה 2 (POC)": st.column_config.TextColumn(width="small"),
+            "יעד 1": st.column_config.TextColumn(width="small"),
+            "יעד 2 (POC)": st.column_config.TextColumn(width="small"),
         },
         height=650
     )
