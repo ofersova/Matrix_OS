@@ -580,11 +580,9 @@ st.markdown("""
     <style>
     .reportview-container { background: #f4f6f9; }
     
-    /* עיצוב לאזורי לונג ושורט */
     .long-zone { border: 3px solid #00cc00; border-radius: 10px; padding: 15px; background-color: rgba(0, 204, 0, 0.05); margin-bottom: 20px; }
     .short-zone { border: 3px solid #cc0000; border-radius: 10px; padding: 15px; background-color: rgba(204, 0, 0, 0.05); margin-bottom: 20px; }
     
-    /* כרטיסיות מידע תחתונות */
     .card { background-color: #ffffff; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border: 1px solid #ddd; }
     .card-title { font-size: 15px; color: #444; margin-bottom: 5px; font-weight: bold; }
     .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #111; }
@@ -592,28 +590,25 @@ st.markdown("""
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
     .card-percent { font-size: 16px; color: #666; }
     
-    /* כרטיסיות לבנות עליונות למדדים */
     .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; }
     
-    /* חצים ענקיים למאקרו */
-    .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; }
-    .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; }
+    .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
+    .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
     
-    /* חצי הכנה (גרדיאנט) כפי שאופיין */
     .arrow-prep-short {
         font-size: 75px;
-        background: linear-gradient(to bottom, #00cc00 0%, #cc0000 100%);
+        background: linear-gradient(to bottom, #00cc00 20%, #cc0000 80%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     .arrow-prep-long {
         font-size: 75px;
-        background: linear-gradient(to top, #cc0000 0%, #00cc00 100%);
+        background: linear-gradient(to top, #cc0000 20%, #00cc00 80%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     
-    .prob-text { font-size: 16px; font-weight: bold; color: #444; background-color: #f0f0f0; padding: 5px 12px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; }
+    .prob-text { font-size: 16px; font-weight: bold; color: #444; background-color: #f0f0f0; padding: 5px 12px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -638,7 +633,11 @@ lev_pairs = {
 # --- פונקציות עזר וחישובים ---
 @st.cache_data(ttl=15)
 def fetch_data(tickers, period='1d', interval='5m'):
-    return yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
+    df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
+    # ניקוי נרות מתים מחוץ לשעות המסחר (מונע קווים מקבילים שטוחים)
+    if not df.empty:
+        df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
+    return df
 
 def calc_rsi(series, window=14):
     delta = series.diff()
@@ -648,6 +647,7 @@ def calc_rsi(series, window=14):
     return 100 - (100 / (1 + rs))
 
 def calc_volume_profile(prices, vols):
+    if len(prices) < 2: return prices.iloc[-1], prices.iloc[-1], prices.iloc[-1]
     bins = np.linspace(prices.min(), prices.max(), 50)
     digitized = np.digitize(prices, bins)
     vol_profile = np.zeros(len(bins)-1)
@@ -666,7 +666,7 @@ def calc_volume_profile(prices, vols):
             lower_idx -= 1; va_volume += vol_profile[lower_idx]
     return bin_centers[poc_idx], bin_centers[upper_idx], bin_centers[lower_idx]
 
-# ציור גרף נרות עם חצים (Backtesting בזמן אמת)
+# ציור גרף נרות עם חצים מרוכזים (Backtesting מדויק)
 def create_candlestick_chart(df, signals, open_price):
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
@@ -675,14 +675,14 @@ def create_candlestick_chart(df, signals, open_price):
     )])
     fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
     
+    # הדבקת החצים המאושרים בלבד כדי למנוע רעש (1 למגמה)
     for sig_time, sig_type, sig_price in signals:
-        if sig_type == "prep_short": sym, c = "▼", "orange"
-        elif sig_type == "prep_long": sym, c = "▲", "orange"
-        elif sig_type == "short": sym, c = "▼", "red"
-        elif sig_type == "long": sym, c = "▲", "green"
+        if sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.002
+        elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.998
         else: continue
+        
         y_pos = "bottom" if "long" in sig_type else "top"
-        fig.add_annotation(x=sig_time, y=sig_price, text=sym, showarrow=False, font=dict(color=c, size=18), yanchor=y_pos)
+        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=24), yanchor=y_pos)
         
     fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=150, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=False), yaxis=dict(visible=False))
     return fig
@@ -695,13 +695,13 @@ st.markdown("---")
 # ==========================================
 # 1. מנוע המאקרו והסתברות ההיפוך (החלק הלבן העליון)
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים וזיהוי היפוך (1D / 5Min Candlesticks)")
+st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה מדויק + איסוף)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
     macro_1m = fetch_data(macro_tickers, period="1d", interval="1m")
-    macro_5m = fetch_data(macro_tickers, period="1d", interval="5m")
-    macro_15m = fetch_data(macro_tickers, period="1d", interval="15m")
+    macro_5m = fetch_data(macro_tickers, period="2d", interval="5m") # מושך מעט אחורה לחישוב ממוצעים תקין
+    macro_15m = fetch_data(macro_tickers, period="2d", interval="15m")
     
     if isinstance(macro_5m.columns, pd.MultiIndex):
         macro_1m.columns = [f"{col[0]}_{col[1]}" for col in macro_1m.columns]
@@ -718,58 +718,79 @@ for idx, (tick, name) in enumerate(names.items()):
         df_5m = macro_5m[[f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']].dropna()
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         
-        s_1m = macro_1m[f'Close_{tick}'].dropna()
-        s_15m = macro_15m[f'Close_{tick}'].dropna()
+        if len(df_5m) < 21: raise Exception
         
-        if df_5m.empty or s_1m.empty or s_15m.empty: raise Exception
+        # חישוב EMA 9 ו-EMA 21 לזיהוי מגמה חסין רעשים
+        df_5m['EMA9'] = df_5m['Close'].ewm(span=9, adjust=False).mean()
+        df_5m['EMA21'] = df_5m['Close'].ewm(span=21, adjust=False).mean()
+        df_5m['RSI'] = calc_rsi(df_5m['Close'])
         
-        c_p = float(df_5m['Close'].iloc[-1])
-        open_p = float(df_5m['Open'].iloc[0])
+        # חיתוך ליום המסחר הנוכחי בלבד להצגה
+        today_date = df_5m.index[-1].date()
+        df_today = df_5m[df_5m.index.date == today_date]
+        if df_today.empty: df_today = df_5m.tail(78) # מגבה אם הבורסה סגורה בדיוק
+        
+        c_p = float(df_today['Close'].iloc[-1])
+        open_p = float(df_today['Open'].iloc[0])
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # חישוב Trend Score (עקיבת מגמה רב-ממדית)
-        mom_1m = s_1m.iloc[-1] - s_1m.iloc[-2]
-        mom_5m = df_5m['Close'].iloc[-1] - df_5m['Close'].iloc[-2]
-        mom_15m = s_15m.iloc[-1] - s_15m.iloc[-2]
-        trend_score = np.sign(mom_1m) + np.sign(mom_5m) + np.sign(mom_15m)
-        
-        poc, vah, val = calc_volume_profile(df_5m['Close'], df_5m['Volume'])
-        
-        # חישוב הסתברות היפוך
-        rsi_series = calc_rsi(df_5m['Close'])
-        curr_rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty and not pd.isna(rsi_series.iloc[-1]) else 50
-        prob_reversal = min(max(abs(curr_rsi - 50) * 2.5, 5), 100)
-        
-        # מכונת 4 המצבים ואפיון החצים
-        if trend_score >= 1:
-            if c_p > vah and trend_score < 3: 
-                arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "תחילת פיזור (הכן פקודת שורט)"
-            else:
-                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
-        elif trend_score <= -1:
-            if c_p < val and trend_score > -3:
-                arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "תחילת איסוף (הכן פקודת לונג)"
-            else:
-                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
-        else:
-            if curr_rsi > 50: arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "היחלשות (דשדוש לקראת שורט)"
-            else: arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "התבססות (דשדוש לקראת לונג)"
-
-        if prob_reversal >= 95:
-            prob_reversal = 100
-            arrow_class = "arrow-huge-red" if "שורט" in status or "ירידה" in status else "arrow-huge-green"
-            status = "היפוך שוק מאושר!"
-            
-        # סריקת אותות היסטוריים להצגה על הגרף
+        # סריקת אותות היסטוריים מדויקים על הגרף (State Machine)
         signals = []
-        for i in range(15, len(df_5m)):
-            p = df_5m['Close'].iloc[i]
-            m = p - df_5m['Close'].iloc[i-3]
-            if p > vah and m < 0: signals.append((df_5m.index[i], "prep_short", p))
-            elif p < val and m > 0: signals.append((df_5m.index[i], "prep_long", p))
-            elif m > 0 and p > val: signals.append((df_5m.index[i], "long", p))
-            elif m < 0 and p < vah: signals.append((df_5m.index[i], "short", p))
+        current_state = 0 # 1 לונג, -1 שורט
+        
+        # התעלמות מרעש פתיחת מסחר (מדלגים על 6 הנרות הראשונים של היום)
+        start_idx = 6 if len(df_today) > 6 else 0
+        
+        for i in range(start_idx, len(df_today)):
+            e9 = df_today['EMA9'].iloc[i]
+            e21 = df_today['EMA21'].iloc[i]
+            p = df_today['Close'].iloc[i]
+            
+            if e9 > e21 and current_state != 1:
+                signals.append((df_today.index[i], "long", p))
+                current_state = 1
+            elif e9 < e21 and current_state != -1:
+                signals.append((df_today.index[i], "short", p))
+                current_state = -1
+                
+        # --- חישוב סטטוס לייב ומד הסתברות ---
+        last_e9 = df_today['EMA9'].iloc[-1]
+        last_e21 = df_today['EMA21'].iloc[-1]
+        last_rsi = df_today['RSI'].iloc[-1]
+        poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
+        
+        # מומנטום קצר לזיהוי התקפלות
+        mom_1m = float(macro_1m[f'Close_{tick}'].dropna().iloc[-1] - macro_1m[f'Close_{tick}'].dropna().iloc[-3]) if not macro_1m.empty else 0
+        mom_5m = float(df_today['Close'].iloc[-1] - df_today['Close'].iloc[-3])
+        trend_score = np.sign(mom_1m) + np.sign(mom_5m)
+        
+        prob_reversal = 10
+        if current_state == 1: # במגמת עלייה
+            if trend_score < 0: # התקפלות קצרה
+                base_prob = 50 + abs(trend_score)*10 + max(0, last_rsi - 50)
+                prob_reversal = min(base_prob, 99)
+                arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "תחילת פיזור (הכן שורט)"
+            else:
+                prob_reversal = min(10 + max(0, last_rsi - 50)*0.5, 49)
+                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
+                
+            if last_e9 < last_e21: # חצייה בפועל עכשיו
+                prob_reversal = 100
+                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "היפוך מגמה לשורט!"
+                
+        else: # במגמת ירידה
+            if trend_score > 0: # איסוף קצר
+                base_prob = 50 + abs(trend_score)*10 + max(0, 50 - last_rsi)
+                prob_reversal = min(base_prob, 99)
+                arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "תחילת איסוף (הכן לונג)"
+            else:
+                prob_reversal = min(10 + max(0, 50 - last_rsi)*0.5, 49)
+                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+                
+            if last_e9 > last_e21: # חצייה בפועל עכשיו
+                prob_reversal = 100
+                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "היפוך מגמה ללונג!"
 
         html_block = f"""
         <div class="macro-white-card">
@@ -783,7 +804,7 @@ for idx, (tick, name) in enumerate(names.items()):
         
         with cols[idx]:
             st.markdown(html_block, unsafe_allow_html=True)
-            st.plotly_chart(create_candlestick_chart(df_5m, signals, open_p), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_candlestick_chart(df_today, signals, open_p), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
         with cols[idx]:
@@ -812,6 +833,7 @@ for sec_name, data in lev_pairs.items():
         base_tick = data['base']
         s_base = intra_data[f'Close_{base_tick}'].dropna()
         v_base = intra_data[f'Volume_{base_tick}'].dropna()
+        if len(s_base) < 2: continue
         
         c_last = float(s_base.iloc[-1])
         intra_chg = ((c_last - float(s_base.iloc[0])) / float(s_base.iloc[0])) * 100
@@ -833,10 +855,8 @@ for sec_name, data in lev_pairs.items():
             targ_long = c_long * (1 + (dist_pct * 3))
             pct_long = ((targ_long - c_long) / c_long) * 100
             
-            if c_last < val:
-                status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▲</span>"
-            else:
-                status_html = "<span style='color:green;'>מגמה מאושרת</span><br><span style='font-size:24px;color:green;'>▲</span>"
+            if c_last < val: status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▲</span>"
+            else: status_html = "<span style='color:green;'>מגמה מאושרת</span><br><span style='font-size:24px;color:green;'>▲</span>"
             long_candidates.append({'name': long_tick, 'price': c_long, 'target': targ_long, 'pct': pct_long, 'status': status_html, 'score': power_score})
             
         else:
@@ -845,14 +865,11 @@ for sec_name, data in lev_pairs.items():
             targ_short = c_short * (1 + (-dist_pct * 3)) 
             pct_short = ((targ_short - c_short) / c_short) * 100
             
-            if c_last > vah:
-                status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▼</span>"
-            else:
-                status_html = "<span style='color:red;'>מגמה מאושרת</span><br><span style='font-size:24px;color:red;'>▼</span>"
+            if c_last > vah: status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▼</span>"
+            else: status_html = "<span style='color:red;'>מגמה מאושרת</span><br><span style='font-size:24px;color:red;'>▼</span>"
             short_candidates.append({'name': short_tick, 'price': c_short, 'target': targ_short, 'pct': pct_short, 'status': status_html, 'score': power_score})
                 
-    except Exception as e:
-        continue
+    except Exception as e: continue
 
 long_candidates = sorted(long_candidates, key=lambda x: x['score'], reverse=True)
 short_candidates = sorted(short_candidates, key=lambda x: x['score'])
@@ -897,6 +914,3 @@ with col_S:
 
 time.sleep(15)
 st.rerun()
-time.sleep(15)
-st.rerun()
-
