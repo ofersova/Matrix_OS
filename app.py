@@ -855,3 +855,6 @@ for sec_name, data in lev_pairs.items():
         if s_base_today.empty: s_base_today = s_base.tail(78); v_base_today = v_base.tail(78)
         
         c_last = float(s_base_today
+
+time.sleep(15)
+st.rerun()
