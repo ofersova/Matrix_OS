@@ -572,7 +572,6 @@ import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
-import pytz
 
 # --- הגדרות עמוד ---
 st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_icon="⚡")
@@ -589,7 +588,6 @@ st.markdown("""
     .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #111; }
     .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
-    .card-percent { font-size: 16px; color: #666; }
     
     .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; }
     
@@ -613,7 +611,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- נתוני בסיס סטטיים ---
+# --- נתוני בסיס ---
 sector_perf_history = {
     'XLK': {'qtr': 27.13, 'mo': 2.52}, 'XLF': {'qtr': 11.46, 'mo': 4.60},
     'XLU': {'qtr': -4.30, 'mo': -1.52}, 'XLE': {'qtr': 0.67, 'mo': -1.58},
@@ -635,11 +633,8 @@ lev_pairs = {
 def fetch_data(tickers, period='1d', interval='5m'):
     df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
     if not df.empty:
-        # ניקוי נרות ריקים כדי למנוע קווים מקבילים (מסנן גם סופ"שים וימי חג)
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df.loc[df['Volume'].sum(axis=1) > 0]
-        else:
-            df = df.loc[df['Volume'] > 0]
+        if isinstance(df.columns, pd.MultiIndex): df = df.loc[df['Volume'].sum(axis=1) > 0]
+        else: df = df.loc[df['Volume'] > 0]
     return df
 
 def calc_volume_profile(prices, vols):
@@ -670,14 +665,16 @@ def create_candlestick_chart(df, signals, open_price):
     )])
     fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
     
+    # הצבת חצים לפי התיאוריה המדויקת
     for sig_time, sig_type, sig_price in signals:
         if sig_type == "prep_short": sym, c, offset = "▼", "#ff9900", 1.002
         elif sig_type == "prep_long": sym, c, offset = "▲", "#ff9900", 0.998
-        elif sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.002
-        elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.998
+        elif sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.003
+        elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.997
         else: continue
+        
         y_pos = "bottom" if "long" in sig_type else "top"
-        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=26, weight="bold"), yanchor=y_pos)
+        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=28, weight="bold"), yanchor=y_pos)
         
     fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=250, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=True, showgrid=False), yaxis=dict(visible=True, showgrid=True, gridcolor='#eee'))
     return fig
@@ -688,9 +685,9 @@ st.write(f"זמן מערכת (ישראל): {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
-# 1. מנוע המאקרו והסתברות ההיפוך
+# 1. מנוע המאקרו: VSA Sequence Engine
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים נעולה)")
+st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים - VSA)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -710,9 +707,6 @@ for idx, (tick, name) in enumerate(names.items()):
         if len(df_5m) < 10: raise Exception
         
         df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
-        df_5m['Mom_5m'] = df_5m['Close'].diff(1)
-        df_5m['Mom_15m'] = df_5m['Close'].diff(3)
-        df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
         
         today_date = df_5m.index[-1].date()
         df_today = df_5m[df_5m.index.date == today_date]
@@ -723,47 +717,72 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # --- מכונת מצבים (State Machine) עם חסימת 15 הדקות הראשונות ---
-        signals = []
-        current_state = 0 
-        prep_state = 0 
-        
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
-        # החוק הקריטי החדש: מתעלמים לחלוטין מ-3 הנרות הראשונים (15 דקות של Amateur Hour)
-        # האלגוריתם מתחיל לבדוק מגמות רק מהנר הרביעי של היום
-        for i in range(3, len(df_today)):
-            price = df_today['Close'].iloc[i]
-            low = df_today['Low'].iloc[i]
-            high = df_today['High'].iloc[i]
-            vol = df_today['Volume'].iloc[i]
-            vol_sma = df_today['Vol_SMA'].iloc[i]
-            score = df_today['Trend_Score'].iloc[i]
-            
-            is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
-            is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
-            
-            if current_state != 1 and prep_state != 1 and is_accum:
-                signals.append((df_today.index[i], "prep_long", low))
-                prep_state = 1
-            elif prep_state == 1 and score >= 1:
-                signals.append((df_today.index[i], "long", low))
-                current_state = 1
-                prep_state = 0
-            elif current_state != -1 and prep_state != -1 and is_dist:
-                signals.append((df_today.index[i], "prep_short", high))
-                prep_state = -1
-            elif prep_state == -1 and score <= -1:
-                signals.append((df_today.index[i], "short", high))
-                current_state = -1
-                prep_state = 0
-                
-        # --- תצוגת הקוביה בזמן אמת ---
-        prob_reversal = 100 if prep_state == 0 else 75
+        # --- לולאת VSA Sequence (נעילת מצבים) ---
+        signals = []
+        current_state = 0 # 1 = Long Confirmed, -1 = Short Confirmed
+        prep_state = 0 # 1 = Accumulation, -1 = Distribution
         
-        # אם טרם חלפו 15 דקות במסחר היומי (אין עדיין מספיק נרות ב-df_today), הצג "ממתין להתייצבות"
+        # מתעלמים מ-15 הדקות הראשונות של "Amateur Hour"
+        for i in range(3, len(df_today)):
+            o = df_today['Open'].iloc[i]
+            c = df_today['Close'].iloc[i]
+            l = df_today['Low'].iloc[i]
+            h = df_today['High'].iloc[i]
+            v = df_today['Volume'].iloc[i]
+            v_sma = df_today['Vol_SMA'].iloc[i]
+            
+            v_prev1 = df_today['Volume'].iloc[i-1] if i>0 else 0
+            v_prev2 = df_today['Volume'].iloc[i-2] if i>1 else 0
+            
+            # --- VSA Rules ---
+            # 1. Stopping Volume / Shakeout (תחילת איסוף ללונג):
+            # נר יורד (או הגיע לנמוך חריג מתחת ל-VAL), שנסגר בחצי העליון שלו, עם נפח חריג.
+            is_down_bar = c < o
+            closed_high = (c - l) / (h - l) > 0.5 if (h - l) > 0 else False
+            is_stopping_vol = (l <= val) and closed_high and (v > v_sma * 1.5)
+            
+            # 2. Buying Climax (תחילת פיזור לשורט):
+            # נר עולה קיצוני (מעל VAH), שנסגר בחצי התחתון שלו, עם נפח חריג.
+            is_up_bar = c > o
+            closed_low = (h - c) / (h - l) > 0.5 if (h - l) > 0 else False
+            is_buying_climax = (h >= vah) and closed_low and (v > v_sma * 1.5)
+            
+            # 3. No Supply (אישור לונג):
+            # נר יורד קלות או דוג'י, עם נפח נמוך במיוחד מ-2 הנרות הקודמים.
+            is_no_supply = (v < v_prev1) and (v < v_prev2) and (c >= l) and (v < v_sma * 0.8)
+            
+            # 4. No Demand (אישור שורט):
+            is_no_demand = (v < v_prev1) and (v < v_prev2) and (c <= h) and (v < v_sma * 0.8)
+            
+            # --- State Machine ---
+            if current_state != 1 and prep_state != 1 and is_stopping_vol:
+                signals.append((df_today.index[i], "prep_long", l))
+                prep_state = 1
+                
+            elif prep_state == 1 and is_no_supply:
+                # הנר הבא חייב לסגור למעלה כדי לאשר (Confirm)
+                if i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h:
+                    signals.append((df_today.index[i+1], "long", df_today['Low'].iloc[i+1]))
+                    current_state = 1
+                    prep_state = 0
+            
+            elif current_state != -1 and prep_state != -1 and is_buying_climax:
+                signals.append((df_today.index[i], "prep_short", h))
+                prep_state = -1
+                
+            elif prep_state == -1 and is_no_demand:
+                if i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l:
+                    signals.append((df_today.index[i+1], "short", df_today['High'].iloc[i+1]))
+                    current_state = -1
+                    prep_state = 0
+
+        # --- קביעת תצוגת הקוביה בזמן אמת ---
+        prob_reversal = 100 if prep_state == 0 and current_state != 0 else 75
+        
         if len(df_today) < 3:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה (15 דקות)"
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה"
             prob_reversal = 0
         else:
             if current_state == 1 and prep_state == 0:
@@ -780,7 +799,7 @@ for idx, (tick, name) in enumerate(names.items()):
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך VSA: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
