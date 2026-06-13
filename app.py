@@ -686,7 +686,7 @@ def create_candlestick_chart(df, signals, open_price):
 
 now_dt = datetime.utcnow() + timedelta(hours=3)
 st.title("⚔️ Attack Board - לוח תקיפה מוסדי")
-st.write(f"זמן מערכת (ישראל): {now_dt.strftime('%H:%M:%S')}")
+st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
@@ -709,7 +709,7 @@ for idx, (tick, name) in enumerate(names.items()):
     try:
         df_5m = macro_5m[[f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']].dropna()
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        if len(df_5m) < 10: raise Exception("Not enough data")
+        if len(df_5m) < 10: raise Exception
         
         df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
         df_5m['Mom_5m'] = df_5m['Close'].diff(1)
@@ -725,12 +725,14 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
+        # חישוב הממוצעים על בסיס נתוני היום הנוכחי בלבד (כמו בגיבוי המוצלח שלך)
         df_today['EMA9'] = df_today['Close'].ewm(span=9, adjust=False).mean()
         df_today['EMA21'] = df_today['Close'].ewm(span=21, adjust=False).mean()
         
+        # --- לולאת State Machine חכמה ---
         signals = []
-        current_state = 0 
-        prep_state = 0 
+        current_state = 0 # 1 = Long, -1 = Short
+        prep_state = 0 # 1 = PrepLong, -1 = PrepShort
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
@@ -746,36 +748,45 @@ for idx, (tick, name) in enumerate(names.items()):
             
             v_prev1 = df_today['Volume'].iloc[i-1] if i > 0 else 0
             
+            # -------------------------------------------------------------
             # THE MAGIC FILTER: מסנן הנפח הדינמי המגן בפני 20 הדקות הראשונות
+            # -------------------------------------------------------------
             if i <= 4:
-                is_accum = (low <= val * 1.002) and (vol > v_prev1 * 1.5)
-                is_dist = (high >= vah * 0.998) and (vol > v_prev1 * 1.5)
+                # ב-20 הדקות הראשונות נדרש נפח עצום (פי 1.5 מהנר הקודם) בגלל פתיחת המסחר
+                is_accum = (low <= val * 1.003) and (vol > v_prev1 * 1.5)
+                is_dist = (high >= vah * 0.997) and (vol > v_prev1 * 1.5)
             else:
-                is_accum = (low <= val * 1.002) and ((vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3))
-                is_dist = (high >= vah * 0.998) and ((vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3))
+                # לאחר מכן חזרה לרגישות הרגילה שעבדה לך מצוין בגיבוי
+                is_accum = (low <= val * 1.003) and ((vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3))
+                is_dist = (high >= vah * 0.997) and ((vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3))
             
+            # --- מעבר משורט להכנת לונג ---
             if current_state != 1 and prep_state != 1 and is_accum:
                 signals.append((df_today.index[i], "prep_long", low))
                 prep_state = 1
                 
+            # --- אישור לונג (V-Shape מומנטום טהור) ---
             elif prep_state == 1:
-                if i >= 3: 
+                if i >= 3: # מוודא שהאישור המלא מגיע רק אחרי 15 דקות
                     if score >= 1 and e9 > e21:
                         signals.append((df_today.index[i], "long", low))
                         current_state = 1
                         prep_state = 0
             
+            # --- מעבר מלונג להכנת שורט ---
             if current_state != -1 and prep_state != -1 and is_dist:
-                signals.append((df_today.index[i], "prep_short", h))
+                signals.append((df_today.index[i], "prep_short", high))
                 prep_state = -1
                 
+            # --- אישור שורט (V-Shape מומנטום טהור) ---
             elif prep_state == -1:
-                if i >= 3: 
+                if i >= 3: # מוודא שהאישור המלא מגיע רק אחרי 15 דקות
                     if score <= -1 and e9 < e21:
                         signals.append((df_today.index[i], "short", high))
                         current_state = -1
                         prep_state = 0
                 
+        # --- קביעת תצוגת הקוביה בזמן אמת ---
         prob_reversal = 100 if prep_state == 0 else 75
         
         if len(df_today) < 3:
@@ -796,7 +807,7 @@ for idx, (tick, name) in enumerate(names.items()):
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
