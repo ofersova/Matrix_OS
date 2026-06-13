@@ -589,30 +589,19 @@ st.markdown("""
     .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
     
-    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; margin-bottom: 20px; }
+    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; margin-bottom: 20px;}
     
-    /* עיצוב חצים במאקרו */
-    .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
-    .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
+    .arrow-huge-green { font-size: 70px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc;}
+    .arrow-huge-red { font-size: 70px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc;}
     
-    .arrow-prep-short {
-        font-size: 75px;
-        background: linear-gradient(to bottom, #00cc00 20%, #cc0000 80%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-weight: bold; line-height: 1; margin: 10px 0;
-    }
-    .arrow-prep-long {
-        font-size: 75px;
-        background: linear-gradient(to top, #cc0000 20%, #00cc00 80%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-weight: bold; line-height: 1; margin: 10px 0;
-    }
+    .arrow-prep-short { font-size: 70px; background: linear-gradient(to bottom, #00cc00 30%, #cc0000 70%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: bold; line-height: 1; margin: 10px 0; }
+    .arrow-prep-long { font-size: 70px; background: linear-gradient(to top, #cc0000 30%, #00cc00 70%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: bold; line-height: 1; margin: 10px 0; }
     
-    .prob-text { font-size: 16px; font-weight: bold; color: #444; background-color: #f0f0f0; padding: 5px 12px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
+    .prob-text { font-size: 16px; font-weight: bold; color: #222; background-color: #f4f4f4; padding: 5px 15px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- נתוני בסיס סטטיים ---
+# --- נתוני בסיס ---
 sector_perf_history = {
     'XLK': {'qtr': 27.13, 'mo': 2.52}, 'XLF': {'qtr': 11.46, 'mo': 4.60},
     'XLU': {'qtr': -4.30, 'mo': -1.52}, 'XLE': {'qtr': 0.67, 'mo': -1.58},
@@ -626,23 +615,21 @@ lev_pairs = {
     'שבבים': {'base': 'SOXX', 'long': 'SOXL', 'short': 'SOXS'},
     'פיננסים': {'base': 'XLF', 'long': 'FAS', 'short': 'FAZ'},
     'אנרגיה': {'base': 'XLE', 'long': 'ERX', 'short': 'ERY'},
-    'בריאות': {'base': 'XLV', 'long': 'CURE', 'short': 'RXD'},
-    'תעשייה': {'base': 'XLI', 'long': 'DUSL', 'short': 'XLI'},
 }
 
 @st.cache_data(ttl=15)
-def fetch_data(tickers, period='5d', interval='5m'): # שונה ל-5d כדי למנוע קריסה בסופ"ש
-    df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
-    if not df.empty:
-        df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
-    return df
-
-def calc_rsi(series, window=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+def fetch_single_ticker(ticker, period='5d', interval='5m'):
+    try:
+        df = yf.download(ticker, period=period, interval=interval, auto_adjust=True, progress=False)
+        if df is not None and not df.empty:
+            # תיקון MultiIndex אם נוצר בטעות בטיקר בודד
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = [col[0] for col in df.columns]
+            df = df.loc[df['Volume'] > 0]
+            return df
+    except:
+        pass
+    return pd.DataFrame()
 
 def calc_volume_profile(prices, vols):
     if len(prices) < 2: return prices.iloc[-1], prices.iloc[-1], prices.iloc[-1]
@@ -650,13 +637,14 @@ def calc_volume_profile(prices, vols):
     digitized = np.digitize(prices, bins)
     vol_profile = np.zeros(len(bins)-1)
     bin_centers = (bins[:-1] + bins[1:]) / 2
-    for i in range(1, len(bins)): vol_profile[i-1] = vols[digitized == i].sum()
+    for i in range(1, len(bins)): vol_profile[i-1] = vols.iloc[digitized == i].sum()
     poc_idx = np.argmax(vol_profile)
     va_volume = vol_profile[poc_idx]
     target_volume = vol_profile.sum() * 0.70
     upper_idx, lower_idx = poc_idx, poc_idx
     while va_volume < target_volume:
-        can_up, can_down = upper_idx < len(vol_profile)-1, lower_idx > 0
+        can_up = upper_idx < len(vol_profile) - 1
+        can_down = lower_idx > 0
         if not can_up and not can_down: break
         if can_up and (not can_down or vol_profile[upper_idx+1] >= vol_profile[lower_idx-1]):
             upper_idx += 1; va_volume += vol_profile[upper_idx]
@@ -680,9 +668,9 @@ def create_candlestick_chart(df, signals, open_price):
         else: continue
         
         y_pos = "bottom" if "long" in sig_type else "top"
-        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=26, weight="bold"), yanchor=y_pos)
+        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=24, weight="bold"), yanchor=y_pos)
         
-    fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=250, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=True, showgrid=False), yaxis=dict(visible=True, showgrid=True, gridcolor='#eee'))
+    fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=220, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=True, showgrid=False), yaxis=dict(visible=True, showgrid=True, gridcolor='#eee'))
     return fig
 
 now_dt = datetime.utcnow() + timedelta(hours=3)
@@ -695,137 +683,112 @@ st.markdown("---")
 # ==========================================
 st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים היברידית)")
 
-macro_tickers = ['DIA', 'QQQ', 'SPY']
-try:
-    macro_5m = fetch_data(macro_tickers, period="5d", interval="5m")
-    if isinstance(macro_5m.columns, pd.MultiIndex):
-        macro_5m.columns = [f"{col[0]}_{col[1]}" for col in macro_5m.columns]
-except:
-    macro_5m = pd.DataFrame()
-
 names = {'DIA': 'DOW JONES', 'QQQ': 'NASDAQ 100', 'SPY': 'S&P 500'}
-macro_cols = st.columns(3) # שריון שם משתנה ייחודי למניעת קריסות (IndexError)
+macro_cols = st.columns(3)
 
 for idx, (tick, name) in enumerate(names.items()):
-    try:
-        df_5m = macro_5m[[f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']].dropna()
-        df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        if len(df_5m) < 10: raise Exception("Not enough data")
-        
-        df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
-        df_5m['Mom_5m'] = df_5m['Close'].diff(1)
-        df_5m['Mom_15m'] = df_5m['Close'].diff(3)
-        df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
-        
-        # משיכת הנתונים רק של יום המסחר העדכני (מגן מסופ"ש)
-        today_date = df_5m.index[-1].date()
-        df_today = df_5m[df_5m.index.date == today_date]
-        if df_today.empty: df_today = df_5m.tail(78) 
-        
-        c_p = float(df_today['Close'].iloc[-1])
-        open_p = float(df_today['Open'].iloc[0])
-        chg_daily = ((c_p - open_p) / open_p) * 100
-        is_green = chg_daily >= 0
-        
-        # חישוב EMA על סמך כל המידע כדי שהממוצעים יהיו מדוייקים מתחילת היום
-        df_today = df_today.copy()
-        df_today['EMA9'] = df_today['Close'].ewm(span=9, adjust=False).mean()
-        df_today['EMA21'] = df_today['Close'].ewm(span=21, adjust=False).mean()
-        
-        # --- לולאת State Machine היברידית (מזהה איסוף דשדוש + V-Shape) ---
-        signals = []
-        current_state = 0 # 1 = Long, -1 = Short
-        prep_state = 0 # 1 = PrepLong, -1 = PrepShort
-        
-        poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
-        
-        # מתחילים מהנר השני כדי לאפשר קפיצת נפח, אך מאשרים חץ רק אחרי 15 דקות (i >= 3)
-        for i in range(1, len(df_today)):
-            o, c, l, h = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i]
-            vol = df_today['Volume'].iloc[i]
-            vol_sma = df_today['Vol_SMA'].iloc[i]
-            score = df_today['Trend_Score'].iloc[i]
-            e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
-            
-            v_prev1 = df_today['Volume'].iloc[i-1] if i>0 else 0
-            
-            # זיהוי איסוף/פיזור שמתאים גם לנזילות הפתיחה (Vol Spike היברידי)
-            is_vol_spike = (vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3)
-            is_accum = (l <= val * 1.003) and is_vol_spike
-            is_dist = (h >= vah * 0.997) and is_vol_spike
-            
-            # מעבר משורט להכנת לונג
-            if current_state != 1 and prep_state != 1 and is_accum:
-                signals.append((df_today.index[i], "prep_long", l))
-                prep_state = 1
+    with macro_cols[idx]:
+        try:
+            df_5m = fetch_single_ticker(tick, period="5d", interval="5m")
+            if df_5m.empty or len(df_5m) < 15:
+                st.warning(f"אין נתונים מספיקים עבור {name}")
+                continue
                 
-            # אישור לונג
-            elif prep_state == 1:
-                # הוכחת אישור מאוחר - רק לאחר 15 דקות של מסחר!
-                if i >= 3:
-                    is_no_supply = (vol < v_prev1) and (c >= l) and (vol < vol_sma * 0.9)
-                    vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h)
-                    mom_conf = (e9 > e21) and (score >= 1) # חציית V Shape אלימה
+            df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
+            df_5m['EMA9'] = df_5m['Close'].ewm(span=9, adjust=False).mean()
+            df_5m['EMA21'] = df_5m['Close'].ewm(span=21, adjust=False).mean()
+            df_5m['Mom_5m'] = df_5m['Close'].diff(1)
+            df_5m['Mom_15m'] = df_5m['Close'].diff(3)
+            df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
+            
+            last_day = df_5m.index[-1].date()
+            df_today = df_5m[df_5m.index.date == last_day]
+            if len(df_today) < 10: df_today = df_5m.tail(78) 
+            
+            c_p = float(df_today['Close'].iloc[-1])
+            open_p = float(df_today['Open'].iloc[0])
+            chg_daily = ((c_p - open_p) / open_p) * 100
+            is_green = chg_daily >= 0
+            
+            signals = []
+            current_state = 0 
+            prep_state = 0 
+            poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
+            
+            for i in range(1, len(df_today)):
+                o, c, l, h = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i]
+                vol = df_today['Volume'].iloc[i]
+                vol_sma = df_today['Vol_SMA'].iloc[i]
+                score = df_today['Trend_Score'].iloc[i]
+                e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
+                v_prev1 = df_today['Volume'].iloc[i-1] if i>0 else 0
+                
+                is_vol_spike = (vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3)
+                is_accum = (l <= val * 1.003) and is_vol_spike
+                is_dist = (h >= vah * 0.997) and is_vol_spike
+                
+                if current_state != 1 and prep_state != 1 and is_accum:
+                    signals.append((df_today.index[i], "prep_long", l))
+                    prep_state = 1
                     
-                    if vsa_conf or mom_conf:
-                        idx = i+1 if (vsa_conf and not mom_conf and i+1 < len(df_today)) else i
-                        signals.append((df_today.index[idx], "long", df_today['Low'].iloc[idx]))
-                        current_state = 1
-                        prep_state = 0
-            
-            # מעבר מלונג להכנת שורט
-            if current_state != -1 and prep_state != -1 and is_dist:
-                signals.append((df_today.index[i], "prep_short", h))
-                prep_state = -1
+                elif prep_state == 1:
+                    if i >= 3:
+                        is_no_supply = (vol < v_prev1) and (c >= l) and (vol < vol_sma * 0.9)
+                        vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h)
+                        mom_conf = (e9 > e21) and (score >= 1)
+                        if vsa_conf or mom_conf:
+                            idx_sig = i+1 if (vsa_conf and not mom_conf and i+1 < len(df_today)) else i
+                            signals.append((df_today.index[idx_sig], "long", df_today['Low'].iloc[idx_sig]))
+                            current_state = 1
+                            prep_state = 0
                 
-            # אישור שורט
-            elif prep_state == -1:
-                if i >= 3:
-                    is_no_demand = (vol < v_prev1) and (c <= h) and (vol < vol_sma * 0.9)
-                    vsa_conf_short = is_no_demand and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l)
-                    mom_conf_short = (e9 < e21) and (score <= -1) # חציית V Shape אלימה
+                if current_state != -1 and prep_state != -1 and is_dist:
+                    signals.append((df_today.index[i], "prep_short", h))
+                    prep_state = -1
                     
-                    if vsa_conf_short or mom_conf_short:
-                        idx = i+1 if (vsa_conf_short and not mom_conf_short and i+1 < len(df_today)) else i
-                        signals.append((df_today.index[idx], "short", df_today['High'].iloc[idx]))
-                        current_state = -1
-                        prep_state = 0
-                
-        # --- קביעת תצוגת הקוביה בזמן אמת ---
-        prob_reversal = 100 if prep_state == 0 else 75
-        
-        if len(df_today) < 3:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה"
-            prob_reversal = 0
-        else:
-            if current_state == 1 and prep_state == 0:
-                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
-            elif current_state == -1 and prep_state == 0:
-                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
-            elif prep_state == 1:
-                arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
-            elif prep_state == -1:
-                arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+                elif prep_state == -1:
+                    if i >= 3:
+                        is_no_demand = (vol < v_prev1) and (c <= h) and (vol < vol_sma * 0.9)
+                        vsa_conf_short = is_no_demand and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l)
+                        mom_conf_short = (e9 < e21) and (score <= -1)
+                        if vsa_conf_short or mom_conf_short:
+                            idx_sig = i+1 if (vsa_conf_short and not mom_conf_short and i+1 < len(df_today)) else i
+                            signals.append((df_today.index[idx_sig], "short", df_today['High'].iloc[idx_sig]))
+                            current_state = -1
+                            prep_state = 0
+                    
+            prob_reversal = 100 if prep_state == 0 else 75
+            
+            if len(df_today) < 3:
+                arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה"
+                prob_reversal = 0
             else:
-                arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
+                if current_state == 1 and prep_state == 0:
+                    arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
+                elif current_state == -1 and prep_state == 0:
+                    arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+                elif prep_state == 1:
+                    arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+                elif prep_state == -1:
+                    arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+                else:
+                    arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
 
-        html_block = f"""
-        <div class="macro-white-card">
-            <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
-            <div class="{arrow_class}">{arrow_char}</div>
-            <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
-            <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
-        </div>
-        """
-        
-        with macro_cols[idx]:
+            html_block = f"""
+            <div class="macro-white-card">
+                <div style="color: #222; font-size: 20px; font-weight: bold; margin-bottom: 5px;">{name}</div>
+                <div class="prob-text">סיכוי היפוך: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+                <div class="{arrow_class}">{arrow_char}</div>
+                <div style="color: #444; font-size: 16px; font-weight: bold; margin: 5px 0;">{status}</div>
+                <div style="color: #000; font-size: 18px; font-weight: bold;">{c_p:.2f} <span style="font-size:14px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
+            </div>
+            """
+            
             st.markdown(html_block, unsafe_allow_html=True)
             st.plotly_chart(create_candlestick_chart(df_today, signals, open_p), use_container_width=True, config={'displayModeBar': False})
-            
-    except Exception as e:
-        if idx < len(macro_cols):
-            with macro_cols[idx]: st.warning(f"אין נתונים מספיקים עבור {name}")
+                
+        except Exception as e:
+            st.warning(f"שגיאה בטעינת הנתונים עבור {name}")
 
 st.markdown("---")
 
@@ -834,37 +797,34 @@ st.markdown("---")
 # ==========================================
 st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפות)")
 
-try:
-    all_tickers = [data['base'] for data in lev_pairs.values()] + [data['long'] for data in lev_pairs.values()] + [data['short'] for data in lev_pairs.values()]
-    intra_data = fetch_data(all_tickers, period="5d", interval="5m")
-    if isinstance(intra_data.columns, pd.MultiIndex):
-        intra_data.columns = [f"{col[0]}_{col[1]}" for col in intra_data.columns]
-except: intra_data = pd.DataFrame()
-
 long_candidates, short_candidates = [], []
 
 for sec_name, data in lev_pairs.items():
     try:
         base_tick = data['base']
-        s_base = intra_data[f'Close_{base_tick}'].dropna()
-        v_base = intra_data[f'Volume_{base_tick}'].dropna()
-        if len(s_base) < 2: continue
+        df_base = fetch_single_ticker(base_tick, period="5d", interval="5m")
+        if df_base.empty or len(df_base) < 10: continue
         
-        last_day = s_base.index[-1].date()
-        s_base_today = s_base[s_base.index.date == last_day]
-        v_base_today = v_base[v_base.index.date == last_day]
-        if s_base_today.empty: s_base_today = s_base.tail(78); v_base_today = v_base.tail(78)
+        last_day = df_base.index[-1].date()
+        s_base_today = df_base[df_base.index.date == last_day]
+        if len(s_base_today) < 10: s_base_today = df_base.tail(78)
         
-        c_last = float(s_base_today.iloc[-1])
-        intra_chg = ((c_last - float(s_base_today.iloc[0])) / float(s_base_today.iloc[0])) * 100
+        c_last = float(s_base_today['Close'].iloc[-1])
+        intra_chg = ((c_last - float(s_base_today['Open'].iloc[0])) / float(s_base_today['Open'].iloc[0])) * 100
+        
         qtr_p = float(sector_perf_history.get(base_tick, {}).get('qtr', 0))
         mo_p = float(sector_perf_history.get(base_tick, {}).get('mo', 0))
         power_score = float((qtr_p * 0.4) + (mo_p * 0.3) + (intra_chg * 0.3))
         
-        poc, vah, val = calc_volume_profile(s_base_today, v_base_today)
+        poc, vah, val = calc_volume_profile(s_base_today['Close'], s_base_today['Volume'])
+        
         long_tick, short_tick = data['long'], data['short']
-        c_long = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
-        c_short = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
+        df_long = fetch_single_ticker(long_tick, period="1d", interval="5m")
+        df_short = fetch_single_ticker(short_tick, period="1d", interval="5m")
+        
+        c_long = float(df_long['Close'].iloc[-1]) if not df_long.empty else 0.0
+        c_short = float(df_short['Close'].iloc[-1]) if not df_short.empty else 0.0
+        if c_long == 0.0 or c_short == 0.0: continue
         
         if power_score > 0:
             target_price = vah + (vah - poc) if c_last > vah else vah
