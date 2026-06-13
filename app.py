@@ -665,7 +665,6 @@ def create_candlestick_chart(df, signals, open_price):
     )])
     fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
     
-    # הצבת חצים לפי התיאוריה המדויקת
     for sig_time, sig_type, sig_price in signals:
         if sig_type == "prep_short": sym, c, offset = "▼", "#ff9900", 1.002
         elif sig_type == "prep_long": sym, c, offset = "▲", "#ff9900", 0.998
@@ -685,9 +684,9 @@ st.write(f"זמן מערכת (ישראל): {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
-# 1. מנוע המאקרו: VSA Sequence Engine
+# 1. מנוע המאקרו: מנוע היברידי (VSA + Momentum)
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים - VSA)")
+st.markdown("### 📊 אינדיקטורים מובילים (זיהוי VSA ומומנטום עמוק)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -706,7 +705,13 @@ for idx, (tick, name) in enumerate(names.items()):
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         if len(df_5m) < 10: raise Exception
         
+        # בניית בסיס היברידי: ממוצעים + VSA
         df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
+        df_5m['EMA9'] = df_5m['Close'].ewm(span=9, adjust=False).mean()
+        df_5m['EMA21'] = df_5m['Close'].ewm(span=21, adjust=False).mean()
+        df_5m['Mom_5m'] = df_5m['Close'].diff(1)
+        df_5m['Mom_15m'] = df_5m['Close'].diff(3)
+        df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
         
         today_date = df_5m.index[-1].date()
         df_today = df_5m[df_5m.index.date == today_date]
@@ -719,66 +724,62 @@ for idx, (tick, name) in enumerate(names.items()):
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
-        # --- לולאת VSA Sequence (נעילת מצבים) ---
+        # --- מנוע היברידי: State Machine ---
         signals = []
-        current_state = 0 # 1 = Long Confirmed, -1 = Short Confirmed
-        prep_state = 0 # 1 = Accumulation, -1 = Distribution
+        current_state = 0 
+        prep_state = 0 
         
-        # מתעלמים מ-15 הדקות הראשונות של "Amateur Hour"
         for i in range(3, len(df_today)):
-            o = df_today['Open'].iloc[i]
-            c = df_today['Close'].iloc[i]
-            l = df_today['Low'].iloc[i]
-            h = df_today['High'].iloc[i]
-            v = df_today['Volume'].iloc[i]
+            o, c, l, h, v = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i], df_today['Volume'].iloc[i]
             v_sma = df_today['Vol_SMA'].iloc[i]
+            e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
+            score = df_today['Trend_Score'].iloc[i]
             
             v_prev1 = df_today['Volume'].iloc[i-1] if i>0 else 0
             v_prev2 = df_today['Volume'].iloc[i-2] if i>1 else 0
             
-            # --- VSA Rules ---
-            # 1. Stopping Volume / Shakeout (תחילת איסוף ללונג):
-            # נר יורד (או הגיע לנמוך חריג מתחת ל-VAL), שנסגר בחצי העליון שלו, עם נפח חריג.
-            is_down_bar = c < o
+            # תנאי איסוף VSA או מומנטום טהור (תופס את העיגולים התכלת)
             closed_high = (c - l) / (h - l) > 0.5 if (h - l) > 0 else False
-            is_stopping_vol = (l <= val) and closed_high and (v > v_sma * 1.5)
+            is_stopping_vol = (l <= val * 1.002) and closed_high and (v > v_sma * 1.2)
+            is_mom_accum = (l <= val * 1.002) and (v > v_sma * 1.1)
             
-            # 2. Buying Climax (תחילת פיזור לשורט):
-            # נר עולה קיצוני (מעל VAH), שנסגר בחצי התחתון שלו, עם נפח חריג.
-            is_up_bar = c > o
             closed_low = (h - c) / (h - l) > 0.5 if (h - l) > 0 else False
-            is_buying_climax = (h >= vah) and closed_low and (v > v_sma * 1.5)
+            is_buying_climax = (h >= vah * 0.998) and closed_low and (v > v_sma * 1.2)
+            is_mom_dist = (h >= vah * 0.998) and (v > v_sma * 1.1)
             
-            # 3. No Supply (אישור לונג):
-            # נר יורד קלות או דוג'י, עם נפח נמוך במיוחד מ-2 הנרות הקודמים.
+            # אישורי VSA
             is_no_supply = (v < v_prev1) and (v < v_prev2) and (c >= l) and (v < v_sma * 0.8)
-            
-            # 4. No Demand (אישור שורט):
             is_no_demand = (v < v_prev1) and (v < v_prev2) and (c <= h) and (v < v_sma * 0.8)
             
-            # --- State Machine ---
-            if current_state != 1 and prep_state != 1 and is_stopping_vol:
+            # מסלול לונג
+            if current_state != 1 and prep_state != 1 and (is_stopping_vol or is_mom_accum):
                 signals.append((df_today.index[i], "prep_long", l))
                 prep_state = 1
                 
-            elif prep_state == 1 and is_no_supply:
-                # הנר הבא חייב לסגור למעלה כדי לאשר (Confirm)
-                if i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h:
-                    signals.append((df_today.index[i+1], "long", df_today['Low'].iloc[i+1]))
+            elif prep_state == 1:
+                vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h)
+                mom_conf = (e9 > e21) and (score >= 1) # תפיסת היפוך V מהיר
+                if vsa_conf or mom_conf:
+                    idx = i+1 if (vsa_conf and not mom_conf) and i+1 < len(df_today) else i
+                    signals.append((df_today.index[idx], "long", df_today['Low'].iloc[idx]))
                     current_state = 1
                     prep_state = 0
             
-            elif current_state != -1 and prep_state != -1 and is_buying_climax:
+            # מסלול שורט
+            elif current_state != -1 and prep_state != -1 and (is_buying_climax or is_mom_dist):
                 signals.append((df_today.index[i], "prep_short", h))
                 prep_state = -1
                 
-            elif prep_state == -1 and is_no_demand:
-                if i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l:
-                    signals.append((df_today.index[i+1], "short", df_today['High'].iloc[i+1]))
+            elif prep_state == -1:
+                vsa_conf_short = is_no_demand and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l)
+                mom_conf_short = (e9 < e21) and (score <= -1) # תפיסת שבירה V מהירה
+                if vsa_conf_short or mom_conf_short:
+                    idx = i+1 if (vsa_conf_short and not mom_conf_short) and i+1 < len(df_today) else i
+                    signals.append((df_today.index[idx], "short", df_today['High'].iloc[idx]))
                     current_state = -1
                     prep_state = 0
 
-        # --- קביעת תצוגת הקוביה בזמן אמת ---
+        # קביעת תצוגת הקוביה
         prob_reversal = 100 if prep_state == 0 and current_state != 0 else 75
         
         if len(df_today) < 3:
@@ -799,7 +800,7 @@ for idx, (tick, name) in enumerate(names.items()):
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך VSA: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
