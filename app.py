@@ -854,7 +854,53 @@ for sec_name, data in lev_pairs.items():
         v_base_today = v_base[v_base.index.date == last_day]
         if s_base_today.empty: s_base_today = s_base.tail(78); v_base_today = v_base.tail(78)
         
-        c_last = float(s_base_today
+        c_last = float(s_base_today.iloc[-1])
+        intra_chg = ((c_last - float(s_base_today.iloc[0])) / float(s_base_today.iloc[0])) * 100
+        qtr_p = float(sector_perf_history.get(base_tick, {}).get('qtr', 0))
+        mo_p = float(sector_perf_history.get(base_tick, {}).get('mo', 0))
+        power_score = float((qtr_p * 0.4) + (mo_p * 0.3) + (intra_chg * 0.3))
+        
+        poc, vah, val = calc_volume_profile(s_base_today, v_base_today)
+        long_tick, short_tick = data['long'], data['short']
+        c_long = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
+        c_short = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
+        
+        if power_score > 0:
+            target_price = vah + (vah - poc) if c_last > vah else vah
+            dist_pct = ((target_price - c_last) / c_last)
+            targ_long = c_long * (1 + (dist_pct * 3))
+            pct_long = ((targ_long - c_long) / c_long) * 100
+            
+            status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▲</span>" if c_last < val else "<span style='color:green;'>מגמה מאושרת</span><br><span style='font-size:24px;color:green;'>▲</span>"
+            long_candidates.append({'name': long_tick, 'price': c_long, 'target': targ_long, 'pct': pct_long, 'status': status_html, 'score': power_score})
+            
+        else:
+            target_price = val - (poc - val) if c_last < val else val
+            dist_pct = ((target_price - c_last) / c_last)
+            targ_short = c_short * (1 + (-dist_pct * 3)) 
+            pct_short = ((targ_short - c_short) / c_short) * 100
+            
+            status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▼</span>" if c_last > vah else "<span style='color:red;'>מגמה מאושרת</span><br><span style='font-size:24px;color:red;'>▼</span>"
+            short_candidates.append({'name': short_tick, 'price': c_short, 'target': targ_short, 'pct': pct_short, 'status': status_html, 'score': power_score})
+                
+    except: continue
+
+long_candidates = sorted(long_candidates, key=lambda x: x['score'], reverse=True)
+short_candidates = sorted(short_candidates, key=lambda x: x['score'])
+
+col_L, col_S = st.columns(2)
+
+with col_L:
+    st.markdown("<div class='long-zone'><h3 style='text-align: center; color: #009900;'>🟢 סקטורים ללונג</h3>", unsafe_allow_html=True)
+    for item in long_candidates:
+        st.markdown(f"<div class='card'><div class='card-title'>{item['name']}</div><table style='width:100%;'><tr><td style='width:33%; font-weight:bold;'>{item['status']}</td><td style='width:33%;'><div class='card-value'>{item['price']:.2f}</div><div style='font-size:12px;color:#888;'>שער נוכחי</div></td><td style='width:33%;'><div class='card-target'>{item['target']:.2f}</div><div class='card-percent'>({item['pct']:+.1f}%)</div><div style='font-size:12px;color:#888;'>יעד מתגלגל</div></td></tr></table></div><br>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col_S:
+    st.markdown("<div class='short-zone'><h3 style='text-align: center; color: #cc0000;'>🔴 סקטורים לשורט</h3>", unsafe_allow_html=True)
+    for item in short_candidates:
+        st.markdown(f"<div class='card'><div class='card-title'>{item['name']}</div><table style='width:100%;'><tr><td style='width:33%; font-weight:bold;'>{item['status']}</td><td style='width:33%;'><div class='card-value'>{item['price']:.2f}</div><div style='font-size:12px;color:#888;'>שער נוכחי</div></td><td style='width:33%;'><div class='card-target-short'>{item['target']:.2f}</div><div class='card-percent'>({item['pct']:+.1f}%)</div><div style='font-size:12px;color:#888;'>יעד מתגלגל</div></td></tr></table></div><br>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 time.sleep(15)
 st.rerun()
