@@ -578,42 +578,41 @@ st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_ic
 
 st.markdown("""
     <style>
-    .reportview-container { background: #ffffff; }
+    .reportview-container { background: #f4f6f9; }
     
     .long-zone { border: 3px solid #00cc00; border-radius: 10px; padding: 15px; background-color: rgba(0, 204, 0, 0.05); margin-bottom: 20px; }
     .short-zone { border: 3px solid #cc0000; border-radius: 10px; padding: 15px; background-color: rgba(204, 0, 0, 0.05); margin-bottom: 20px; }
     
-    .card { background-color: #f9f9f9; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #eee; }
-    .card-title { font-size: 15px; color: #333; margin-bottom: 5px; font-weight: bold; }
-    .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #000; }
+    .card { background-color: #ffffff; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border: 1px solid #ddd; }
+    .card-title { font-size: 15px; color: #444; margin-bottom: 5px; font-weight: bold; }
+    .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #111; }
     .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
-    .card-percent { font-size: 16px; color: #555; }
     
-    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #eaeaea; }
+    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; }
     
-    .arrow-huge-green { font-size: 80px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; }
-    .arrow-huge-red { font-size: 80px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; }
+    /* עיצוב חצים במאקרו */
+    .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
+    .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
     
-    /* חצי גרדיאנט להכנה וזיהוי איסוף/פיזור */
     .arrow-prep-short {
-        font-size: 80px;
-        background: linear-gradient(to bottom, #00cc00 30%, #cc0000 70%);
+        font-size: 75px;
+        background: linear-gradient(to bottom, #00cc00 20%, #cc0000 80%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     .arrow-prep-long {
-        font-size: 80px;
-        background: linear-gradient(to top, #cc0000 30%, #00cc00 70%);
+        font-size: 75px;
+        background: linear-gradient(to top, #cc0000 20%, #00cc00 80%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     
-    .prob-text { font-size: 18px; font-weight: bold; color: #222; background-color: #f4f4f4; padding: 5px 15px; border-radius: 25px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
+    .prob-text { font-size: 16px; font-weight: bold; color: #444; background-color: #f0f0f0; padding: 5px 12px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- נתוני בסיס ---
+# --- נתוני בסיס סטטיים ---
 sector_perf_history = {
     'XLK': {'qtr': 27.13, 'mo': 2.52}, 'XLF': {'qtr': 11.46, 'mo': 4.60},
     'XLU': {'qtr': -4.30, 'mo': -1.52}, 'XLE': {'qtr': 0.67, 'mo': -1.58},
@@ -637,6 +636,13 @@ def fetch_data(tickers, period='1d', interval='5m'):
     if not df.empty:
         df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
     return df
+
+def calc_rsi(series, window=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 def calc_volume_profile(prices, vols):
     if len(prices) < 2: return prices.iloc[-1], prices.iloc[-1], prices.iloc[-1]
@@ -667,13 +673,14 @@ def create_candlestick_chart(df, signals, open_price):
     fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
     
     for sig_time, sig_type, sig_price in signals:
-        if sig_type == "prep_short": sym, c, offset = "▼", "orange", 1.001
-        elif sig_type == "prep_long": sym, c, offset = "▲", "orange", 0.999
+        if sig_type == "prep_short": sym, c, offset = "▼", "#ff9900", 1.002
+        elif sig_type == "prep_long": sym, c, offset = "▲", "#ff9900", 0.998
         elif sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.002
         elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.998
         else: continue
+        
         y_pos = "bottom" if "long" in sig_type else "top"
-        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=24, weight="bold"), yanchor=y_pos)
+        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=26, weight="bold"), yanchor=y_pos)
         
     fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=250, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=True, showgrid=False), yaxis=dict(visible=True, showgrid=True, gridcolor='#eee'))
     return fig
@@ -684,9 +691,9 @@ st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
-# 1. מנוע המאקרו והסתברות ההיפוך 
+# 1. מנוע המאקרו והסתברות ההיפוך
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה מדויק + איסוף)")
+st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים נעולה)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -705,12 +712,10 @@ for idx, (tick, name) in enumerate(names.items()):
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         if len(df_5m) < 10: raise Exception
         
-        # בניית Trend Score ומיצוע נפח למציאת CHOCH
         df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
-        df_5m['Mom_1m_proxy'] = df_5m['Close'] - df_5m['Open']
         df_5m['Mom_5m'] = df_5m['Close'].diff(1)
         df_5m['Mom_15m'] = df_5m['Close'].diff(3)
-        df_5m['Trend_Score'] = np.sign(df_5m['Mom_1m_proxy']) + np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
+        df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
         
         today_date = df_5m.index[-1].date()
         df_today = df_5m[df_5m.index.date == today_date]
@@ -721,12 +726,10 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # לולאת Backtest מוקשחת (State Machine) לסינון חצי שווא
+        # --- לולאת State Machine מחמירה לסינון רעשים ---
         signals = []
-        state = 0 # 1 = Long, -1 = Short
-        prep_active = False
-        prob_reversal = 10
-        arrow_class, arrow_char, status = "", "", ""
+        current_state = 0 # 1 = Long, -1 = Short
+        prep_state = 0 # 1 = PrepLong, -1 = PrepShort
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
@@ -738,50 +741,47 @@ for idx, (tick, name) in enumerate(names.items()):
             vol_sma = df_today['Vol_SMA'].iloc[i]
             score = df_today['Trend_Score'].iloc[i]
             
-            # זיהוי איסוף/פיזור (מחיר בקצה + זינוק בנפח המעיד על מלכודת נזילות)
-            is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.2)
-            is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.2)
+            is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
+            is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
             
-            if state <= 0: # ממתין להיפוך ללונג
-                if is_accum and not prep_active:
-                    signals.append((df_today.index[i], "prep_long", low))
-                    prep_active = True
-                    prob_reversal = 80
-                    arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+            # מעבר משורט להכנת לונג
+            if current_state != 1 and prep_state != 1 and is_accum:
+                signals.append((df_today.index[i], "prep_long", low))
+                prep_state = 1
+            # אישור לונג
+            elif prep_state == 1 and score >= 1:
+                signals.append((df_today.index[i], "long", low))
+                current_state = 1
+                prep_state = 0
+            
+            # מעבר מלונג להכנת שורט
+            elif current_state != -1 and prep_state != -1 and is_dist:
+                signals.append((df_today.index[i], "prep_short", high))
+                prep_state = -1
+            # אישור שורט
+            elif prep_state == -1 and score <= -1:
+                signals.append((df_today.index[i], "short", high))
+                current_state = -1
+                prep_state = 0
                 
-                # אישור מגמה רק בציון מושלם
-                if prep_active and score == 3:
-                    signals.append((df_today.index[i], "long", low))
-                    state = 1
-                    prep_active = False
-                    prob_reversal = 100
-                    arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
-                    
-            if state >= 0: # ממתין להיפוך לשורט
-                if is_dist and not prep_active:
-                    signals.append((df_today.index[i], "prep_short", high))
-                    prep_active = True
-                    prob_reversal = 80
-                    arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
-                
-                if prep_active and score == -3:
-                    signals.append((df_today.index[i], "short", high))
-                    state = -1
-                    prep_active = False
-                    prob_reversal = 100
-                    arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+        # --- קביעת תצוגת הקוביה בזמן אמת ---
+        prob_reversal = 100 if prep_state == 0 else 75
         
-        # אם אין מידע ודאי מהלולאה, הגדרת ברירת מחדל
-        if not arrow_class:
-            arrow_class = "arrow-huge-green" if is_green else "arrow-huge-red"
-            arrow_char = "⬆" if is_green else "⬇"
-            status = "מגמה יציבה"
-            prob_reversal = 10
+        if current_state == 1 and prep_state == 0:
+            arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
+        elif current_state == -1 and prep_state == 0:
+            arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+        elif prep_state == 1:
+            arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+        elif prep_state == -1:
+            arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+        else:
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
 
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prob_reversal>75 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
