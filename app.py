@@ -589,7 +589,7 @@ st.markdown("""
     .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
     
-    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; margin-bottom: 20px; }
+    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; margin-bottom: 20px;}
     
     .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
     .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
@@ -611,7 +611,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- נתוני בסיס סטטיים ---
+# --- נתוני בסיס ---
 sector_perf_history = {
     'XLK': {'qtr': 27.13, 'mo': 2.52}, 'XLF': {'qtr': 11.46, 'mo': 4.60},
     'XLU': {'qtr': -4.30, 'mo': -1.52}, 'XLE': {'qtr': 0.67, 'mo': -1.58},
@@ -642,7 +642,7 @@ def calc_volume_profile(prices, vols):
     digitized = np.digitize(prices, bins)
     vol_profile = np.zeros(len(bins)-1)
     bin_centers = (bins[:-1] + bins[1:]) / 2
-    for i in range(1, len(bins)): vol_profile[i-1] = vols[digitized == i].sum()
+    for i in range(1, len(bins)): vol_profile[i-1] = vols.iloc[digitized == i].sum()
     poc_idx = np.argmax(vol_profile)
     va_volume = vol_profile[poc_idx]
     target_volume = vol_profile.sum() * 0.70
@@ -683,9 +683,9 @@ st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
-# 1. מנוע המאקרו: מנוע היברידי דו-שלבי (VWAP + EMA)
+# 1. מנוע המאקרו: פתרון פיצול הבוקר והיום (Split-Engine)
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי VWAP בפתיחה + מומנטום המשך היום)")
+st.markdown("### 📊 אינדיקטורים מובילים (זיהוי VWAP בפתיחה $\\rightarrow$ מומנטום להמשך היום)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -704,12 +704,22 @@ for idx, (tick, name) in enumerate(names.items()):
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         if len(df_5m) < 10: raise Exception
         
-        # --- חילוץ נתוני היום בלבד כדי לאפס את ה-VWAP ---
         last_day = df_5m.index[-1].date()
         df_today = df_5m[df_5m.index.date == last_day].copy()
-        if len(df_today) < 10: df_today = df_5m.tail(78).copy()
+        if df_today.empty or len(df_today) < 10: df_today = df_5m.tail(78).copy() 
         
-        # --- 1. חישוב VWAP פנימי וסטיות תקן מוסדיות ---
+        c_p = float(df_today['Close'].iloc[-1])
+        open_p = float(df_today['Open'].iloc[0])
+        chg_daily = ((c_p - open_p) / open_p) * 100
+        is_green = chg_daily >= 0
+        
+        # --- חישובי בסיס של הגיבוי הטוב שלך ---
+        df_today['Vol_SMA'] = df_today['Volume'].rolling(10).mean()
+        df_today['Mom_5m'] = df_today['Close'].diff(1)
+        df_today['Mom_15m'] = df_today['Close'].diff(3)
+        df_today['Trend_Score'] = np.sign(df_today['Mom_5m']) + np.sign(df_today['Mom_15m'])
+        
+        # --- חישובי VWAP עבור 30 הדקות הראשונות בלבד ---
         df_today['Typical_Price'] = (df_today['High'] + df_today['Low'] + df_today['Close']) / 3
         df_today['Cum_Vol'] = df_today['Volume'].cumsum()
         df_today['Cum_Vol_Price'] = (df_today['Typical_Price'] * df_today['Volume']).cumsum()
@@ -719,85 +729,75 @@ for idx, (tick, name) in enumerate(names.items()):
         df_today['VWAP_Upper2'] = df_today['VWAP'] + (2 * df_today['VWAP_Std'])
         df_today['VWAP_Lower2'] = df_today['VWAP'] - (2 * df_today['VWAP_Std'])
         
-        # --- 2. מנוע מומנטום וממוצעים נעים קלאסי (עבור המשך היום) ---
-        df_today['Vol_SMA'] = df_today['Volume'].rolling(10).mean()
-        df_today['Mom_5m'] = df_today['Close'].diff(1)
-        df_today['Mom_15m'] = df_today['Close'].diff(3)
-        df_today['Trend_Score'] = np.sign(df_today['Mom_5m']) + np.sign(df_today['Mom_15m'])
-        df_today['EMA9'] = df_today['Close'].ewm(span=9, adjust=False).mean()
-        df_today['EMA21'] = df_today['Close'].ewm(span=21, adjust=False).mean()
-        
-        c_p = float(df_today['Close'].iloc[-1])
-        open_p = float(df_today['Open'].iloc[0])
-        chg_daily = ((c_p - open_p) / open_p) * 100
-        is_green = chg_daily >= 0
-        
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
-        # --- לולאת State Machine הדו-שלבית ---
         signals = []
         current_state = 0 
         prep_state = 0 
         
+        # לולאת המנוע המפוצל (Hybrid Two-Stage)
         for i in range(1, len(df_today)):
-            o, c, l, h = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i]
+            price = df_today['Close'].iloc[i]
+            low = df_today['Low'].iloc[i]
+            high = df_today['High'].iloc[i]
+            open_c = df_today['Open'].iloc[i]
             vol = df_today['Volume'].iloc[i]
             vol_sma = df_today['Vol_SMA'].iloc[i]
             score = df_today['Trend_Score'].iloc[i]
-            e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
             
-            is_morning = i <= 6 # 30 הדקות הראשונות של יום המסחר (6 נרות של 5 דקות)
+            is_morning = i <= 6 # עד הדקה ה-35 (7 נרות ראשונים)
             
             if is_morning:
-                # ==========================================
-                # מנוע בוקר: VWAP Standard Deviation Reversals
-                # ==========================================
+                # ==================================================
+                # מנוע בוקר (לכידת V-Shape עם VWAP Bands)
+                # ==================================================
                 vwap_lower = df_today['VWAP_Lower2'].iloc[i]
                 vwap_upper = df_today['VWAP_Upper2'].iloc[i]
                 
-                # זיהוי שבירת ±2 סטיות תקן והכנה להיפוך V-Shape
-                if current_state != 1 and prep_state != 1 and l <= vwap_lower:
-                    signals.append((df_today.index[i], "prep_long", l))
+                is_accum_vwap = (low <= vwap_lower)
+                is_dist_vwap = (high >= vwap_upper)
+                
+                if current_state != 1 and prep_state != 1 and is_accum_vwap:
+                    signals.append((df_today.index[i], "prep_long", low))
                     prep_state = 1
-                elif prep_state == 1 and c > o: # נר ירוק שמאשר חזרה פנימה
-                    signals.append((df_today.index[i], "long", l))
+                elif prep_state == 1 and price > open_c: # נר ירוק עולה = אישור
+                    signals.append((df_today.index[i], "long", low))
                     current_state = 1
                     prep_state = 0
                     
-                if current_state != -1 and prep_state != -1 and h >= vwap_upper:
-                    signals.append((df_today.index[i], "prep_short", h))
+                if current_state != -1 and prep_state != -1 and is_dist_vwap:
+                    signals.append((df_today.index[i], "prep_short", high))
                     prep_state = -1
-                elif prep_state == -1 and c < o: # נר אדום שמאשר חזרה פנימה
-                    signals.append((df_today.index[i], "short", h))
+                elif prep_state == -1 and price < open_c: # נר אדום יורד = אישור
+                    signals.append((df_today.index[i], "short", high))
                     current_state = -1
                     prep_state = 0
                     
             else:
-                # ==========================================
-                # מנוע יום מלא: EMA + Volume Profile
-                # ==========================================
-                is_accum = (l <= val * 1.002) and (vol > vol_sma * 1.1)
-                is_dist = (h >= vah * 0.998) and (vol > vol_sma * 1.1)
+                # ==================================================
+                # מנוע יום (הגיבוי המושלם שלך: מומנטום + אזור ערך)
+                # ==================================================
+                is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
+                is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
                 
                 if current_state != 1 and prep_state != 1 and is_accum:
-                    signals.append((df_today.index[i], "prep_long", l))
+                    signals.append((df_today.index[i], "prep_long", low))
                     prep_state = 1
-                elif prep_state == 1 and score >= 1 and e9 > e21:
-                    signals.append((df_today.index[i], "long", l))
+                elif prep_state == 1 and score >= 1:
+                    signals.append((df_today.index[i], "long", low))
                     current_state = 1
                     prep_state = 0
-                
+                    
                 if current_state != -1 and prep_state != -1 and is_dist:
-                    signals.append((df_today.index[i], "prep_short", h))
+                    signals.append((df_today.index[i], "prep_short", high))
                     prep_state = -1
-                elif prep_state == -1 and score <= -1 and e9 < e21:
-                    signals.append((df_today.index[i], "short", h))
+                elif prep_state == -1 and score <= -1:
+                    signals.append((df_today.index[i], "short", high))
                     current_state = -1
                     prep_state = 0
                 
-        # --- קביעת תצוגת הקוביה בזמן אמת ---
+        # קביעת סטטוס זמן אמת
         prob_reversal = 100 if prep_state == 0 else 75
-        
         if current_state == 1 and prep_state == 0:
             arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
         elif current_state == -1 and prep_state == 0:
@@ -807,7 +807,7 @@ for idx, (tick, name) in enumerate(names.items()):
         elif prep_state == -1:
             arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
         else:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "ממתין להזדמנות"
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
 
         html_block = f"""
         <div class="macro-white-card">
@@ -824,12 +824,13 @@ for idx, (tick, name) in enumerate(names.items()):
             st.plotly_chart(create_candlestick_chart(df_today, signals, open_p), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
-        with cols[idx]: st.warning(f"אין נתונים מספיקים עבור {name}")
+        if idx < 3:
+            with cols[idx]: st.warning(f"אין נתונים מספיקים עבור {name}")
 
 st.markdown("---")
 
 # ==========================================
-# 2. מנוע מומנטום וחלוקה לאזורי תקיפה
+# 2. אזורי תקיפה (סורק תעודות ממונפות)
 # ==========================================
 st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפות)")
 
