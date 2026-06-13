@@ -572,7 +572,6 @@ import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
-import requests
 
 # --- הגדרות עמוד ---
 st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_icon="⚡")
@@ -590,7 +589,7 @@ st.markdown("""
     .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
     
-    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; }
+    .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; margin-bottom: 20px; }
     
     /* עיצוב חצים במאקרו */
     .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
@@ -632,7 +631,7 @@ lev_pairs = {
 }
 
 @st.cache_data(ttl=15)
-def fetch_data(tickers, period='5d', interval='5m'): # שונה ל-5 ימים לעקיפת סופ"ש
+def fetch_data(tickers, period='5d', interval='5m'): # שונה ל-5d כדי למנוע קריסה בסופ"ש
     df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
     if not df.empty:
         df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
@@ -705,24 +704,22 @@ except:
     macro_5m = pd.DataFrame()
 
 names = {'DIA': 'DOW JONES', 'QQQ': 'NASDAQ 100', 'SPY': 'S&P 500'}
-cols = st.columns(3)
+macro_cols = st.columns(3) # שריון שם משתנה ייחודי למניעת קריסות (IndexError)
 
 for idx, (tick, name) in enumerate(names.items()):
     try:
         df_5m = macro_5m[[f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']].dropna()
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        if len(df_5m) < 10: raise Exception
+        if len(df_5m) < 10: raise Exception("Not enough data")
         
         df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
-        df_5m['EMA9'] = df_5m['Close'].ewm(span=9, adjust=False).mean()
-        df_5m['EMA21'] = df_5m['Close'].ewm(span=21, adjust=False).mean()
         df_5m['Mom_5m'] = df_5m['Close'].diff(1)
         df_5m['Mom_15m'] = df_5m['Close'].diff(3)
         df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
         
-        # חילוץ נתוני היום האחרון להתעלמות מושלמת מסופ"ש
-        last_day = df_5m.index[-1].date()
-        df_today = df_5m[df_5m.index.date == last_day]
+        # משיכת הנתונים רק של יום המסחר העדכני (מגן מסופ"ש)
+        today_date = df_5m.index[-1].date()
+        df_today = df_5m[df_5m.index.date == today_date]
         if df_today.empty: df_today = df_5m.tail(78) 
         
         c_p = float(df_today['Close'].iloc[-1])
@@ -730,57 +727,65 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # --- לולאת State Machine היברידית ---
+        # חישוב EMA על סמך כל המידע כדי שהממוצעים יהיו מדוייקים מתחילת היום
+        df_today = df_today.copy()
+        df_today['EMA9'] = df_today['Close'].ewm(span=9, adjust=False).mean()
+        df_today['EMA21'] = df_today['Close'].ewm(span=21, adjust=False).mean()
+        
+        # --- לולאת State Machine היברידית (מזהה איסוף דשדוש + V-Shape) ---
         signals = []
         current_state = 0 # 1 = Long, -1 = Short
         prep_state = 0 # 1 = PrepLong, -1 = PrepShort
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
+        # מתחילים מהנר השני כדי לאפשר קפיצת נפח, אך מאשרים חץ רק אחרי 15 דקות (i >= 3)
         for i in range(1, len(df_today)):
-            o, c, l, h, vol = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i], df_today['Volume'].iloc[i]
+            o, c, l, h = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i]
+            vol = df_today['Volume'].iloc[i]
             vol_sma = df_today['Vol_SMA'].iloc[i]
             score = df_today['Trend_Score'].iloc[i]
-            e9 = df_today['EMA9'].iloc[i]
-            e21 = df_today['EMA21'].iloc[i]
+            e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
             
-            v_prev1 = df_today['Volume'].iloc[i-1] if i > 0 else 0
+            v_prev1 = df_today['Volume'].iloc[i-1] if i>0 else 0
             
-            # זיהוי איסוף מוקדם - משלב זינוק אבסולוטי לעומת נר קודם כדי למנוע את עיוות הנפח של הנסדא"ק
+            # זיהוי איסוף/פיזור שמתאים גם לנזילות הפתיחה (Vol Spike היברידי)
             is_vol_spike = (vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3)
             is_accum = (l <= val * 1.003) and is_vol_spike
             is_dist = (h >= vah * 0.997) and is_vol_spike
             
-            is_no_supply = (vol < v_prev1) and (c >= l) and (vol < vol_sma * 0.9)
-            is_no_demand = (vol < v_prev1) and (c <= h) and (vol < vol_sma * 0.9)
-            
-            # 1. מעבר משורט להכנת לונג (קצה אזור ערך + נפח)
+            # מעבר משורט להכנת לונג
             if current_state != 1 and prep_state != 1 and is_accum:
                 signals.append((df_today.index[i], "prep_long", l))
                 prep_state = 1
                 
-            # 2. אישור לונג
+            # אישור לונג
             elif prep_state == 1:
-                if i >= 3: # התעלמות מ-15 הדקות הראשונות של פתיחת יום המסחר (הגנה מוסדית)
-                    mom_conf = (e9 > e21) and (score >= 1) # V-Shape
-                    vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h) # Sideways
-                    if mom_conf or vsa_conf:
+                # הוכחת אישור מאוחר - רק לאחר 15 דקות של מסחר!
+                if i >= 3:
+                    is_no_supply = (vol < v_prev1) and (c >= l) and (vol < vol_sma * 0.9)
+                    vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h)
+                    mom_conf = (e9 > e21) and (score >= 1) # חציית V Shape אלימה
+                    
+                    if vsa_conf or mom_conf:
                         idx = i+1 if (vsa_conf and not mom_conf and i+1 < len(df_today)) else i
                         signals.append((df_today.index[idx], "long", df_today['Low'].iloc[idx]))
                         current_state = 1
                         prep_state = 0
             
-            # 3. מעבר מלונג להכנת שורט
+            # מעבר מלונג להכנת שורט
             if current_state != -1 and prep_state != -1 and is_dist:
                 signals.append((df_today.index[i], "prep_short", h))
                 prep_state = -1
                 
-            # 4. אישור שורט
+            # אישור שורט
             elif prep_state == -1:
-                if i >= 3: # התעלמות מ-15 הדקות הראשונות
-                    mom_conf_short = (e9 < e21) and (score <= -1)
+                if i >= 3:
+                    is_no_demand = (vol < v_prev1) and (c <= h) and (vol < vol_sma * 0.9)
                     vsa_conf_short = is_no_demand and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l)
-                    if mom_conf_short or vsa_conf_short:
+                    mom_conf_short = (e9 < e21) and (score <= -1) # חציית V Shape אלימה
+                    
+                    if vsa_conf_short or mom_conf_short:
                         idx = i+1 if (vsa_conf_short and not mom_conf_short and i+1 < len(df_today)) else i
                         signals.append((df_today.index[idx], "short", df_today['High'].iloc[idx]))
                         current_state = -1
@@ -790,7 +795,7 @@ for idx, (tick, name) in enumerate(names.items()):
         prob_reversal = 100 if prep_state == 0 else 75
         
         if len(df_today) < 3:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות (15 דק')"
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה"
             prob_reversal = 0
         else:
             if current_state == 1 and prep_state == 0:
@@ -807,19 +812,20 @@ for idx, (tick, name) in enumerate(names.items()):
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
         </div>
         """
         
-        with cols[idx]:
+        with macro_cols[idx]:
             st.markdown(html_block, unsafe_allow_html=True)
             st.plotly_chart(create_candlestick_chart(df_today, signals, open_p), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
-        with cols[idx]: st.warning(f"אין נתונים מספיקים עבור {name}")
+        if idx < len(macro_cols):
+            with macro_cols[idx]: st.warning(f"אין נתונים מספיקים עבור {name}")
 
 st.markdown("---")
 
