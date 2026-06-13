@@ -564,25 +564,23 @@ if pro_data:
         return [''] * len(row)
     styled_pro = df_pro_clean.style.set_properties(**{'font-size': '15px', 'text-align': 'center', 'white-space': 'pre-wrap'}).set_table_styles([dict(selector='th', props=[('font-size', '15px'), ('text-align', 'center')])]).apply(style_pro_matrix, axis=1)
     st.dataframe(styled_pro, use_container_width=True, hide_index=True, height=650)
-else:
-    st.info("⚠️ ממתין לנתוני מסחר לחילוץ רמות PRO (ייתכן עיכוב ברשת)...")
-import streamlit as st
+else:import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
-import requests
 
 # --- הגדרות עמוד ---
 st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_icon="⚡")
 
 st.markdown("""
     <style>
+    /* הגדרת רקע כללי כהה (כדי לא להרוס שאר האפליקציה) אך אזורי מטרה בהירים */
     .reportview-container { background: #0e1117; }
     
-    /* עיצוב לאזורי לונג ושורט */
+    /* עיצוב לאזורי לונג ושורט (למטה) */
     .long-zone {
         border: 3px solid #00ff00;
         border-radius: 10px;
@@ -598,7 +596,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* עיצוב כרטיסיות מידע */
+    /* עיצוב כרטיסיות מידע תחתונות */
     .card {
         background-color: #1e1e1e;
         border-radius: 8px;
@@ -612,7 +610,50 @@ st.markdown("""
     .card-target-short { font-size: 18px; color: #ff0000; font-weight: bold; margin-bottom: 5px; }
     .card-percent { font-size: 16px; color: #aaa; }
     
-    /* חצים מיוחדים */
+    /* --- עיצוב אזור המאקרו העליון (בהיר ונקי) --- */
+    .macro-container {
+        display: flex;
+        justify-content: space-around;
+        background-color: #f5f5f5; /* רקע בהיר */
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .macro-box {
+        text-align: center;
+        flex: 1;
+        border-right: 1px solid #ddd;
+        padding: 0 10px;
+    }
+    .macro-box:last-child { border-right: none; }
+    
+    .macro-name { font-size: 16px; color: #333; font-weight: bold; margin-bottom: 5px; }
+    .macro-prob { font-size: 14px; color: #666; font-weight: bold; margin-bottom: 5px; }
+    
+    /* חצים מוגדלים וגרדיאנטים */
+    .arrow-huge-green { font-size: 60px; color: #00b300; font-weight: bold; line-height: 1; margin: 5px 0; }
+    .arrow-huge-red { font-size: 60px; color: #cc0000; font-weight: bold; line-height: 1; margin: 5px 0; }
+    
+    .arrow-prep-short {
+        font-size: 60px;
+        background: linear-gradient(to bottom, #00b300 0%, #cc0000 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: bold;
+        line-height: 1; margin: 5px 0;
+    }
+    
+    .arrow-prep-long {
+        font-size: 60px;
+        background: linear-gradient(to top, #cc0000 0%, #00b300 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: bold;
+        line-height: 1; margin: 5px 0;
+    }
+    
+    /* חצים למטה בטבלה הממונפת */
     .arrow-prepare {
         font-size: 30px;
         background: -webkit-linear-gradient(bottom, red, green);
@@ -623,8 +664,6 @@ st.markdown("""
     .arrow-long { font-size: 30px; color: #00ff00; font-weight: bold; }
     .arrow-short { font-size: 30px; color: #ff0000; font-weight: bold; }
     
-    .macro-table th { text-align: center !important; font-size: 18px !important; border-bottom: 2px solid #555 !important; }
-    .macro-table td { text-align: center !important; font-size: 24px !important; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -676,80 +715,132 @@ def calc_volume_profile(prices, vols):
     return bin_centers[poc_idx], bin_centers[upper_idx], bin_centers[lower_idx]
 
 def determine_state(price, prev_price, poc, vah, val):
-    # לוגיקת מצבים: פריצה מובהקת מול הכנה/איסוף
     trend_up = price > prev_price
-    
     if price > vah and trend_up:
-        # הרחבה ראשונה מעל אזור הערך
         target = vah + (vah - poc)
-        if price > target: target = target + (vah - poc) # יעד מתגלגל
+        if price > target: target = target + (vah - poc) 
         return "long_confirm", target
     elif val <= price <= vah and trend_up:
-        # בתוך האזור, תחילת איסוף ללונג
         return "long_prepare", vah
     elif price < val and not trend_up:
-        # הרחבה ראשונה מתחת לאזור הערך
         target = val - (poc - val)
-        if price < target: target = target - (poc - val) # יעד מתגלגל
+        if price < target: target = target - (poc - val) 
         return "short_confirm", target
     elif val <= price <= vah and not trend_up:
-        # בתוך האזור, תחילת פיזור לשורט
         return "short_prepare", val
     else:
-        # מצבי ביניים (Whipsaws)
         if trend_up: return "long_prepare", vah
         else: return "short_prepare", val
+
+# פונקציה לייצור עמודות נפח שעתי (Sparkline Bar Chart)
+def create_hourly_bars(series, is_green):
+    color = "#00b300" if is_green else "#cc0000"
+    fig = go.Figure(go.Bar(x=list(range(len(series))), y=series.values, marker_color=color))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=40,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(visible=False, showgrid=False),
+        yaxis=dict(visible=False, showgrid=False),
+        showlegend=False
+    )
+    return fig
 
 now_dt = datetime.utcnow() + timedelta(hours=3)
 st.title("⚔️ Attack Board - לוח תקיפה מוסדי")
 st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
 
 # ==========================================
-# 1. RISK ON/OFF (לוח מאקרו עליון עיצוב נקי)
+# 1. RISK ON/OFF (לוח מאקרו עליון בהיר ומעוצב)
 # ==========================================
-st.markdown("### 🌍 RISK ON/OFF")
+st.markdown("### 🌍 RISK ON/OFF (אינדיקטורים מובילים)")
 
-macro_tickers = ['DX-Y.NYB', '^TNX', 'BTC-USD', 'CL=F', 'DIA', 'QQQ', 'SPY']
+macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
-    macro_data = fetch_data(macro_tickers, period="2d", interval="1h")
-    if isinstance(macro_data.columns, pd.MultiIndex):
-        macro_data.columns = [f"{col[0]}_{col[1]}" for col in macro_data.columns]
+    # משיכת נתונים שעתים ל-24 השעות האחרונות (עבור העמודות למטה)
+    macro_hourly = fetch_data(macro_tickers, period="2d", interval="1h")
+    if isinstance(macro_hourly.columns, pd.MultiIndex):
+        macro_hourly.columns = [f"{col[0]}_{col[1]}" for col in macro_hourly.columns]
+        
+    # משיכת נתוני 5 דקות לחישוב מומנטום והיפוך
+    macro_5m = fetch_data(macro_tickers, period="2d", interval="5m")
+    if isinstance(macro_5m.columns, pd.MultiIndex):
+        macro_5m.columns = [f"{col[0]}_{col[1]}" for col in macro_5m.columns]
 except:
-    macro_data = pd.DataFrame()
+    macro_hourly = pd.DataFrame()
+    macro_5m = pd.DataFrame()
 
-macro_display = []
-names = {'DX-Y.NYB': 'DXY', '^TNX': 'TNX', 'BTC-USD': 'BTC', 'CL=F': 'OIL', 'DIA': 'DOW', 'QQQ': 'NASDAQ', 'SPY': 'S&P500'}
+names = {'DIA': 'DOW', 'QQQ': 'NASDAQ', 'SPY': 'S&P 500'}
+cols = st.columns(3)
 
-for tick, name in names.items():
+html_blocks = []
+
+for idx, (tick, name) in enumerate(names.items()):
     try:
-        s = macro_data[f'Close_{tick}'].dropna()
-        c_p = float(s.iloc[-1]); p_p = float(s.iloc[0])
-        chg = ((c_p - p_p) / p_p) * 100
+        # נתוני מומנטום קצר טווח
+        s_5m = macro_5m[f'Close_{tick}'].dropna()
+        c_p = float(s_5m.iloc[-1])
+        p_p = float(s_5m.iloc[-12]) # שעה אחרונה בערך
+        chg_5m = ((c_p - p_p) / p_p) * 100
         
-        # לוגיקת חצים מדויקת לפי התמונה שלך
-        if tick in ['DX-Y.NYB', '^TNX', 'CL=F']:
-            arrow = "<span style='color:red;'>⬆</span>" if chg > 0 else "<span style='color:green;'>⬇</span>"
-        else: # BTC, מדדים
-            arrow = "<span style='color:green;'>⬆</span>" if chg > 0 else "<span style='color:red;'>⬇</span>"
+        # חישוב הסתברות היפוך (מודל צעצוע המבוסס על סטייה ממוצעת)
+        dist_from_mean = abs(c_p - s_5m.mean()) / s_5m.std()
+        prob_reversal = min(int(dist_from_mean * 25), 99) 
+        if prob_reversal < 20: prob_reversal += 20 # מינימום הסתברות
         
-        macro_display.append(f"<td>{name}<br>{arrow}<br><span style='font-size:14px;color:#aaa;'>{chg:+.1f}%</span></td>")
-    except:
-        macro_display.append(f"<td>{name}<br>--</td>")
+        # זיהוי המגמה ובחירת החץ
+        is_uptrend = chg_5m > 0
+        is_reversing = prob_reversal > 75
+        
+        if is_uptrend and not is_reversing:
+            arrow_class = "arrow-huge-green"
+            arrow_char = "⬆"
+            status_text = "עלייה חזקה"
+        elif is_uptrend and is_reversing:
+            arrow_class = "arrow-prep-short" # מחליף לירוק-אדום
+            arrow_char = "⬇"
+            status_text = "התקפלות לשורט (הכן פקודה)"
+            prob_reversal = 100 # ננעל
+        elif not is_uptrend and not is_reversing:
+            arrow_class = "arrow-huge-red"
+            arrow_char = "⬇"
+            status_text = "ירידה חזקה"
+        else: # ירידה שמתהפכת לעליה
+            arrow_class = "arrow-prep-long" # מחליף לאדום-ירוק
+            arrow_char = "⬆"
+            status_text = "איסוף ללונג (הכן פקודה)"
+            prob_reversal = 100
+        
+        # בניית הבלוק הלבן עם הנתונים
+        html_block = f"""
+        <div style="background-color: #ffffff; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #ddd;">
+            <div style="color: #333; font-size: 20px; font-weight: bold;">{name}</div>
+            <div style="color: #666; font-size: 14px;">הסתברות היפוך: <b>{prob_reversal}%</b></div>
+            <div class="{arrow_class}">{arrow_char}</div>
+            <div style="color: #333; font-size: 14px; font-weight: bold;">{status_text}</div>
+            <div style="color: #888; font-size: 12px; margin-top: 5px;">שער: {c_p:.2f} ({chg_5m:+.2f}%)</div>
+        </div>
+        """
+        
+        # ציור עמודות השעות האחרונות (Sparklines)
+        s_hourly = macro_hourly[f'Close_{tick}'].dropna().tail(24) # 24 שעות אחרונות
+        
+        with cols[idx]:
+            st.markdown(html_block, unsafe_allow_html=True)
+            st.plotly_chart(create_hourly_bars(s_hourly, is_uptrend), use_container_width=True, config={'displayModeBar': False})
+            
+    except Exception as e:
+        with cols[idx]:
+            st.warning(f"No Data for {name}")
 
-html_table = f"""
-<table class="macro-table" style="width:100%; margin-bottom: 30px;">
-    <tr>{''.join(macro_display)}</tr>
-</table>
-"""
-st.markdown(html_table, unsafe_allow_html=True)
-
+st.markdown("---")
 
 # ==========================================
 # 2. מנוע מומנטום וחלוקה לאזורי תקיפה (Long / Short Zones)
 # ==========================================
 st.markdown("### 🎯 טבלת הנכסים למסחר יומי (סורק חכם)")
 
-# איסוף וחישוב נתונים לכל הסקטורים הממונפים
 try:
     all_tickers = [data['base'] for data in lev_pairs.values()] + [data['long'] for data in lev_pairs.values()] + [data['short'] for data in lev_pairs.values()]
     intra_data = fetch_data(all_tickers, period="5d", interval="5m")
@@ -778,7 +869,6 @@ for sec_name, data in lev_pairs.items():
         poc, vah, val = calc_volume_profile(s_base, v_base)
         state, target_price = determine_state(c_last, c_prev, poc, vah, val)
         
-        # חישוב המרה לנכס הממונף
         dist_pct = ((target_price - c_last) / c_last)
         
         long_tick, short_tick = data['long'], data['short']
@@ -786,12 +876,11 @@ for sec_name, data in lev_pairs.items():
         c_short = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
         
         targ_long = c_long * (1 + (dist_pct * 3))
-        targ_short = c_short * (1 + (-dist_pct * 3)) # מינוף הפוך
+        targ_short = c_short * (1 + (-dist_pct * 3)) 
         
         pct_long = ((targ_long - c_long) / c_long) * 100
         pct_short = ((targ_short - c_short) / c_short) * 100
 
-        # הכנסה לאזורים לפי כיוון המומנטום המאקרו-אסטרטגי (Power Score)
         if power_score > 0:
             if "long" in state:
                 status_html = "הכן פקודה<br><span class='arrow-prepare'>⬆</span>" if "prepare" in state else "אישור מגמה<br><span class='arrow-long'>⬆</span>"
@@ -804,11 +893,9 @@ for sec_name, data in lev_pairs.items():
     except Exception as e:
         continue
 
-# מיון לפי עוצמה
 long_candidates = sorted(long_candidates, key=lambda x: x['score'], reverse=True)
 short_candidates = sorted(short_candidates, key=lambda x: x['score'])
 
-# --- תצוגת האזורים (Heatmap Cards) ---
 col_L, col_S = st.columns(2)
 
 with col_L:
@@ -863,6 +950,8 @@ with col_S:
         st.write("אין סקטורים עם מומנטום שלילי ברור כרגע.")
     st.markdown("</div>", unsafe_allow_html=True)
 
+time.sleep(15)
+st.rerun()
 time.sleep(15)
 st.rerun()
 time.sleep(15)
