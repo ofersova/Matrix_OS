@@ -572,6 +572,7 @@ import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
+import requests
 
 # --- הגדרות עמוד ---
 st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_icon="⚡")
@@ -631,7 +632,7 @@ lev_pairs = {
 }
 
 @st.cache_data(ttl=15)
-def fetch_data(tickers, period='1d', interval='5m'):
+def fetch_data(tickers, period='5d', interval='5m'): # שונה ל-5 ימים לעקיפת סופ"ש
     df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
     if not df.empty:
         df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
@@ -693,11 +694,11 @@ st.markdown("---")
 # ==========================================
 # 1. מנוע המאקרו והסתברות ההיפוך
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים נעולה)")
+st.markdown("### 📊 אינדיקטורים מובילים (זיהוי מגמה ומכונת מצבים היברידית)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
-    macro_5m = fetch_data(macro_tickers, period="2d", interval="5m")
+    macro_5m = fetch_data(macro_tickers, period="5d", interval="5m")
     if isinstance(macro_5m.columns, pd.MultiIndex):
         macro_5m.columns = [f"{col[0]}_{col[1]}" for col in macro_5m.columns]
 except:
@@ -713,12 +714,15 @@ for idx, (tick, name) in enumerate(names.items()):
         if len(df_5m) < 10: raise Exception
         
         df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
+        df_5m['EMA9'] = df_5m['Close'].ewm(span=9, adjust=False).mean()
+        df_5m['EMA21'] = df_5m['Close'].ewm(span=21, adjust=False).mean()
         df_5m['Mom_5m'] = df_5m['Close'].diff(1)
         df_5m['Mom_15m'] = df_5m['Close'].diff(3)
         df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
         
-        today_date = df_5m.index[-1].date()
-        df_today = df_5m[df_5m.index.date == today_date]
+        # חילוץ נתוני היום האחרון להתעלמות מושלמת מסופ"ש
+        last_day = df_5m.index[-1].date()
+        df_today = df_5m[df_5m.index.date == last_day]
         if df_today.empty: df_today = df_5m.tail(78) 
         
         c_p = float(df_today['Close'].iloc[-1])
@@ -726,57 +730,79 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # --- לולאת State Machine מחמירה לסינון רעשים ---
+        # --- לולאת State Machine היברידית ---
         signals = []
         current_state = 0 # 1 = Long, -1 = Short
         prep_state = 0 # 1 = PrepLong, -1 = PrepShort
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
-        for i in range(5, len(df_today)):
-            price = df_today['Close'].iloc[i]
-            low = df_today['Low'].iloc[i]
-            high = df_today['High'].iloc[i]
-            vol = df_today['Volume'].iloc[i]
+        for i in range(1, len(df_today)):
+            o, c, l, h, vol = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i], df_today['Volume'].iloc[i]
             vol_sma = df_today['Vol_SMA'].iloc[i]
             score = df_today['Trend_Score'].iloc[i]
+            e9 = df_today['EMA9'].iloc[i]
+            e21 = df_today['EMA21'].iloc[i]
             
-            is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
-            is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
+            v_prev1 = df_today['Volume'].iloc[i-1] if i > 0 else 0
             
-            # מעבר משורט להכנת לונג
+            # זיהוי איסוף מוקדם - משלב זינוק אבסולוטי לעומת נר קודם כדי למנוע את עיוות הנפח של הנסדא"ק
+            is_vol_spike = (vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3)
+            is_accum = (l <= val * 1.003) and is_vol_spike
+            is_dist = (h >= vah * 0.997) and is_vol_spike
+            
+            is_no_supply = (vol < v_prev1) and (c >= l) and (vol < vol_sma * 0.9)
+            is_no_demand = (vol < v_prev1) and (c <= h) and (vol < vol_sma * 0.9)
+            
+            # 1. מעבר משורט להכנת לונג (קצה אזור ערך + נפח)
             if current_state != 1 and prep_state != 1 and is_accum:
-                signals.append((df_today.index[i], "prep_long", low))
+                signals.append((df_today.index[i], "prep_long", l))
                 prep_state = 1
-            # אישור לונג
-            elif prep_state == 1 and score >= 1:
-                signals.append((df_today.index[i], "long", low))
-                current_state = 1
-                prep_state = 0
+                
+            # 2. אישור לונג
+            elif prep_state == 1:
+                if i >= 3: # התעלמות מ-15 הדקות הראשונות של פתיחת יום המסחר (הגנה מוסדית)
+                    mom_conf = (e9 > e21) and (score >= 1) # V-Shape
+                    vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h) # Sideways
+                    if mom_conf or vsa_conf:
+                        idx = i+1 if (vsa_conf and not mom_conf and i+1 < len(df_today)) else i
+                        signals.append((df_today.index[idx], "long", df_today['Low'].iloc[idx]))
+                        current_state = 1
+                        prep_state = 0
             
-            # מעבר מלונג להכנת שורט
-            elif current_state != -1 and prep_state != -1 and is_dist:
-                signals.append((df_today.index[i], "prep_short", high))
+            # 3. מעבר מלונג להכנת שורט
+            if current_state != -1 and prep_state != -1 and is_dist:
+                signals.append((df_today.index[i], "prep_short", h))
                 prep_state = -1
-            # אישור שורט
-            elif prep_state == -1 and score <= -1:
-                signals.append((df_today.index[i], "short", high))
-                current_state = -1
-                prep_state = 0
+                
+            # 4. אישור שורט
+            elif prep_state == -1:
+                if i >= 3: # התעלמות מ-15 הדקות הראשונות
+                    mom_conf_short = (e9 < e21) and (score <= -1)
+                    vsa_conf_short = is_no_demand and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l)
+                    if mom_conf_short or vsa_conf_short:
+                        idx = i+1 if (vsa_conf_short and not mom_conf_short and i+1 < len(df_today)) else i
+                        signals.append((df_today.index[idx], "short", df_today['High'].iloc[idx]))
+                        current_state = -1
+                        prep_state = 0
                 
         # --- קביעת תצוגת הקוביה בזמן אמת ---
         prob_reversal = 100 if prep_state == 0 else 75
         
-        if current_state == 1 and prep_state == 0:
-            arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
-        elif current_state == -1 and prep_state == 0:
-            arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
-        elif prep_state == 1:
-            arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
-        elif prep_state == -1:
-            arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+        if len(df_today) < 3:
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות (15 דק')"
+            prob_reversal = 0
         else:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
+            if current_state == 1 and prep_state == 0:
+                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
+            elif current_state == -1 and prep_state == 0:
+                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+            elif prep_state == 1:
+                arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+            elif prep_state == -1:
+                arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+            else:
+                arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
 
         html_block = f"""
         <div class="macro-white-card">
@@ -804,7 +830,7 @@ st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפו�
 
 try:
     all_tickers = [data['base'] for data in lev_pairs.values()] + [data['long'] for data in lev_pairs.values()] + [data['short'] for data in lev_pairs.values()]
-    intra_data = fetch_data(all_tickers, period="1d", interval="5m")
+    intra_data = fetch_data(all_tickers, period="5d", interval="5m")
     if isinstance(intra_data.columns, pd.MultiIndex):
         intra_data.columns = [f"{col[0]}_{col[1]}" for col in intra_data.columns]
 except: intra_data = pd.DataFrame()
@@ -818,13 +844,18 @@ for sec_name, data in lev_pairs.items():
         v_base = intra_data[f'Volume_{base_tick}'].dropna()
         if len(s_base) < 2: continue
         
-        c_last = float(s_base.iloc[-1])
-        intra_chg = ((c_last - float(s_base.iloc[0])) / float(s_base.iloc[0])) * 100
+        last_day = s_base.index[-1].date()
+        s_base_today = s_base[s_base.index.date == last_day]
+        v_base_today = v_base[v_base.index.date == last_day]
+        if s_base_today.empty: s_base_today = s_base.tail(78); v_base_today = v_base.tail(78)
+        
+        c_last = float(s_base_today.iloc[-1])
+        intra_chg = ((c_last - float(s_base_today.iloc[0])) / float(s_base_today.iloc[0])) * 100
         qtr_p = float(sector_perf_history.get(base_tick, {}).get('qtr', 0))
         mo_p = float(sector_perf_history.get(base_tick, {}).get('mo', 0))
         power_score = float((qtr_p * 0.4) + (mo_p * 0.3) + (intra_chg * 0.3))
         
-        poc, vah, val = calc_volume_profile(s_base, v_base)
+        poc, vah, val = calc_volume_profile(s_base_today, v_base_today)
         long_tick, short_tick = data['long'], data['short']
         c_long = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
         c_short = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
