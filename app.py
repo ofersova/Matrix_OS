@@ -565,6 +565,7 @@ if pro_data:
     styled_pro = df_pro_clean.style.set_properties(**{'font-size': '15px', 'text-align': 'center', 'white-space': 'pre-wrap'}).set_table_styles([dict(selector='th', props=[('font-size', '15px'), ('text-align', 'center')])]).apply(style_pro_matrix, axis=1)
     st.dataframe(styled_pro, use_container_width=True, hide_index=True, height=650)
 else:import streamlit as st
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -577,108 +578,62 @@ st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_ic
 
 st.markdown("""
     <style>
-    /* הגדרת רקע כללי כהה (כדי לא להרוס שאר האפליקציה) אך אזורי מטרה בהירים */
-    .reportview-container { background: #0e1117; }
+    .reportview-container { background: #f0f2f6; }
     
-    /* עיצוב לאזורי לונג ושורט (למטה) */
-    .long-zone {
-        border: 3px solid #00ff00;
-        border-radius: 10px;
-        padding: 15px;
-        background-color: rgba(0, 255, 0, 0.05);
-        margin-bottom: 20px;
-    }
-    .short-zone {
-        border: 3px solid #ff0000;
-        border-radius: 10px;
-        padding: 15px;
-        background-color: rgba(255, 0, 0, 0.05);
-        margin-bottom: 20px;
-    }
+    /* אזורי לונג ושורט למטה */
+    .long-zone { border: 3px solid #00b300; border-radius: 10px; padding: 15px; background-color: rgba(0, 255, 0, 0.05); margin-bottom: 20px; }
+    .short-zone { border: 3px solid #cc0000; border-radius: 10px; padding: 15px; background-color: rgba(255, 0, 0, 0.05); margin-bottom: 20px; }
     
-    /* עיצוב כרטיסיות מידע תחתונות */
-    .card {
-        background-color: #1e1e1e;
-        border-radius: 8px;
-        padding: 15px;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    .card-title { font-size: 14px; color: #888; margin-bottom: 5px; }
-    .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
-    .card-target { font-size: 18px; color: #00ff00; font-weight: bold; margin-bottom: 5px; }
-    .card-target-short { font-size: 18px; color: #ff0000; font-weight: bold; margin-bottom: 5px; }
-    .card-percent { font-size: 16px; color: #aaa; }
+    /* כרטיסיות נתונים תחתונות */
+    .card { background-color: #ffffff; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #ddd; }
+    .card-title { font-size: 14px; color: #555; margin-bottom: 5px; font-weight: bold; }
+    .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #222; }
+    .card-target { font-size: 18px; color: #00b300; font-weight: bold; margin-bottom: 5px; }
+    .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
+    .card-percent { font-size: 16px; color: #777; }
     
-    /* --- עיצוב אזור המאקרו העליון (בהיר ונקי) --- */
-    .macro-container {
-        display: flex;
-        justify-content: space-around;
-        background-color: #f5f5f5; /* רקע בהיר */
+    /* כרטיסיות לבנות עליונות למדדים המובילים */
+    .macro-white-card {
+        background-color: #ffffff;
+        border-radius: 12px;
         padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-    .macro-box {
         text-align: center;
-        flex: 1;
-        border-right: 1px solid #ddd;
-        padding: 0 10px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
     }
-    .macro-box:last-child { border-right: none; }
     
-    .macro-name { font-size: 16px; color: #333; font-weight: bold; margin-bottom: 5px; }
-    .macro-prob { font-size: 14px; color: #666; font-weight: bold; margin-bottom: 5px; }
-    
-    /* חצים מוגדלים וגרדיאנטים */
-    .arrow-huge-green { font-size: 60px; color: #00b300; font-weight: bold; line-height: 1; margin: 5px 0; }
-    .arrow-huge-red { font-size: 60px; color: #cc0000; font-weight: bold; line-height: 1; margin: 5px 0; }
+    /* עיצוב חצים עליונים ענקיים */
+    .arrow-huge-green { font-size: 70px; color: #00cc00; font-weight: bold; line-height: 1.1; margin: 0; text-shadow: 1px 1px 2px #ccc; }
+    .arrow-huge-red { font-size: 70px; color: #e60000; font-weight: bold; line-height: 1.1; margin: 0; text-shadow: 1px 1px 2px #ccc; }
     
     .arrow-prep-short {
-        font-size: 60px;
-        background: linear-gradient(to bottom, #00b300 0%, #cc0000 100%);
+        font-size: 70px;
+        background: linear-gradient(to bottom, #00cc00 0%, #e60000 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-weight: bold;
-        line-height: 1; margin: 5px 0;
+        font-weight: bold; line-height: 1.1; margin: 0;
     }
-    
     .arrow-prep-long {
-        font-size: 60px;
-        background: linear-gradient(to top, #cc0000 0%, #00b300 100%);
+        font-size: 70px;
+        background: linear-gradient(to top, #e60000 0%, #00cc00 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-weight: bold;
-        line-height: 1; margin: 5px 0;
+        font-weight: bold; line-height: 1.1; margin: 0;
     }
     
-    /* חצים למטה בטבלה הממונפת */
-    .arrow-prepare {
-        font-size: 30px;
-        background: -webkit-linear-gradient(bottom, red, green);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: bold;
-    }
-    .arrow-long { font-size: 30px; color: #00ff00; font-weight: bold; }
-    .arrow-short { font-size: 30px; color: #ff0000; font-weight: bold; }
+    /* תצוגת אחוזים */
+    .prob-text { font-size: 16px; font-weight: bold; color: #555; background-color: #f9f9f9; padding: 4px 10px; border-radius: 20px; display: inline-block; margin-bottom: 10px; }
     
     </style>
 """, unsafe_allow_html=True)
 
 # --- נתוני בסיס סטטיים ---
 sector_perf_history = {
-    'XLK': {'qtr': 27.13, 'mo': 2.52},
-    'XLF': {'qtr': 11.46, 'mo': 4.60},
-    'XLU': {'qtr': -4.30, 'mo': -1.52},
-    'XLE': {'qtr': 0.67, 'mo': -1.58},
-    'XLRE': {'qtr': 6.94, 'mo': 2.46},
-    'XLV': {'qtr': 3.22, 'mo': 3.11},
-    'XLI': {'qtr': 9.17, 'mo': 1.64},
-    'XLY': {'qtr': 4.66, 'mo': -4.19},
-    'XLP': {'qtr': 0.32, 'mo': -0.77},
-    'XLB': {'qtr': 4.24, 'mo': -4.96}
+    'XLK': {'qtr': 27.13, 'mo': 2.52}, 'XLF': {'qtr': 11.46, 'mo': 4.60},
+    'XLU': {'qtr': -4.30, 'mo': -1.52}, 'XLE': {'qtr': 0.67, 'mo': -1.58},
+    'XLRE': {'qtr': 6.94, 'mo': 2.46}, 'XLV': {'qtr': 3.22, 'mo': 3.11},
+    'XLI': {'qtr': 9.17, 'mo': 1.64}, 'XLY': {'qtr': 4.66, 'mo': -4.19},
+    'XLP': {'qtr': 0.32, 'mo': -0.77}, 'XLB': {'qtr': 4.24, 'mo': -4.96}
 }
 
 lev_pairs = {
@@ -690,10 +645,17 @@ lev_pairs = {
     'תעשייה': {'base': 'XLI', 'long': 'DUSL', 'short': 'XLI'},
 }
 
-# --- פונקציות עזר ---
+# --- פונקציות מתמטיות ועזר ---
 @st.cache_data(ttl=15)
-def fetch_data(tickers, period='5d', interval='5m'):
+def fetch_data(tickers, period='1d', interval='5m'):
     return yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
+
+def calc_rsi(series, window=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 def calc_volume_profile(prices, vols):
     bins = np.linspace(prices.min(), prices.max(), 50)
@@ -718,31 +680,54 @@ def determine_state(price, prev_price, poc, vah, val):
     trend_up = price > prev_price
     if price > vah and trend_up:
         target = vah + (vah - poc)
-        if price > target: target = target + (vah - poc) 
+        if price > target: target += (vah - poc)
         return "long_confirm", target
     elif val <= price <= vah and trend_up:
         return "long_prepare", vah
     elif price < val and not trend_up:
         target = val - (poc - val)
-        if price < target: target = target - (poc - val) 
+        if price < target: target -= (poc - val)
         return "short_confirm", target
     elif val <= price <= vah and not trend_up:
         return "short_prepare", val
     else:
-        if trend_up: return "long_prepare", vah
-        else: return "short_prepare", val
+        return "long_prepare" if trend_up else "short_prepare", vah if trend_up else val
 
-# פונקציה לייצור עמודות נפח שעתי (Sparkline Bar Chart)
-def create_hourly_bars(series, is_green):
-    color = "#00b300" if is_green else "#cc0000"
-    fig = go.Figure(go.Bar(x=list(range(len(series))), y=series.values, marker_color=color))
+# --- יצירת גרף תואם Finviz עם סמני איתות היסטוריים ---
+def create_finviz_chart(series, signals, is_green, open_price):
+    color = "rgba(0, 200, 0, 1)" if is_green else "rgba(220, 0, 0, 1)"
+    fillcolor = "rgba(0, 200, 0, 0.2)" if is_green else "rgba(220, 0, 0, 0.2)"
+    
+    fig = go.Figure()
+    
+    # הוספת קו רפרנס של פתיחת היום (כמו ב-Finviz)
+    fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
+    
+    # ציור שטח הגרף
+    fig.add_trace(go.Scatter(
+        x=series.index, y=series.values, mode='lines',
+        line=dict(color=color, width=2),
+        fill='tozeroy', fillcolor=fillcolor
+    ))
+    
+    # הדבקת החצים ההיסטוריים על הגרף (Backtesting לאימות)
+    for sig_time, sig_type, sig_price in signals:
+        if sig_type == "prep_short": sym, c = "▼", "orange"
+        elif sig_type == "prep_long": sym, c = "▲", "orange"
+        elif sig_type == "short": sym, c = "▼", "red"
+        elif sig_type == "long": sym, c = "▲", "green"
+        else: continue
+            
+        fig.add_annotation(
+            x=sig_time, y=sig_price, text=sym, showarrow=False,
+            font=dict(color=c, size=16), yanchor="bottom" if "long" in sig_type else "top"
+        )
+        
     fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=40,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=0, r=0, t=5, b=0), height=100,
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, showgrid=False),
-        yaxis=dict(visible=False, showgrid=False),
+        yaxis=dict(visible=False, showgrid=False, range=[series.min()*0.998, series.max()*1.002]),
         showlegend=False
     )
     return fig
@@ -750,100 +735,110 @@ def create_hourly_bars(series, is_green):
 now_dt = datetime.utcnow() + timedelta(hours=3)
 st.title("⚔️ Attack Board - לוח תקיפה מוסדי")
 st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.markdown("---")
 
 # ==========================================
-# 1. RISK ON/OFF (לוח מאקרו עליון בהיר ומעוצב)
+# 1. מנוע המאקרו והסתברות ההיפוך (החלק הלבן העליון)
 # ==========================================
-st.markdown("### 🌍 RISK ON/OFF (אינדיקטורים מובילים)")
+st.markdown("### 📊 אינדיקטורים מובילים (1D / 5Min)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
-    # משיכת נתונים שעתים ל-24 השעות האחרונות (עבור העמודות למטה)
-    macro_hourly = fetch_data(macro_tickers, period="2d", interval="1h")
-    if isinstance(macro_hourly.columns, pd.MultiIndex):
-        macro_hourly.columns = [f"{col[0]}_{col[1]}" for col in macro_hourly.columns]
-        
-    # משיכת נתוני 5 דקות לחישוב מומנטום והיפוך
-    macro_5m = fetch_data(macro_tickers, period="2d", interval="5m")
-    if isinstance(macro_5m.columns, pd.MultiIndex):
-        macro_5m.columns = [f"{col[0]}_{col[1]}" for col in macro_5m.columns]
+    # משיכת נתונים ליום אחד, 5 דקות. (מתאפס אוטומטית בפתיחת המסחר, שומר יום קודם בסגירה)
+    macro_1d = fetch_data(macro_tickers, period="1d", interval="5m")
+    if isinstance(macro_1d.columns, pd.MultiIndex):
+        macro_1d.columns = [f"{col[0]}_{col[1]}" for col in macro_1d.columns]
 except:
-    macro_hourly = pd.DataFrame()
-    macro_5m = pd.DataFrame()
+    macro_1d = pd.DataFrame()
 
-names = {'DIA': 'DOW', 'QQQ': 'NASDAQ', 'SPY': 'S&P 500'}
+names = {'DIA': 'DOW JONES', 'QQQ': 'NASDAQ 100', 'SPY': 'S&P 500'}
 cols = st.columns(3)
-
-html_blocks = []
 
 for idx, (tick, name) in enumerate(names.items()):
     try:
-        # נתוני מומנטום קצר טווח
-        s_5m = macro_5m[f'Close_{tick}'].dropna()
-        c_p = float(s_5m.iloc[-1])
-        p_p = float(s_5m.iloc[-12]) # שעה אחרונה בערך
-        chg_5m = ((c_p - p_p) / p_p) * 100
+        s_close = macro_1d[f'Close_{tick}'].dropna()
+        s_vol = macro_1d[f'Volume_{tick}'].dropna()
+        if s_close.empty: raise Exception
         
-        # חישוב הסתברות היפוך (מודל צעצוע המבוסס על סטייה ממוצעת)
-        dist_from_mean = abs(c_p - s_5m.mean()) / s_5m.std()
-        prob_reversal = min(int(dist_from_mean * 25), 99) 
-        if prob_reversal < 20: prob_reversal += 20 # מינימום הסתברות
+        c_p = float(s_close.iloc[-1])
+        open_p = float(s_close.iloc[0]) # שער הפתיחה של היום
+        chg_daily = ((c_p - open_p) / open_p) * 100
+        is_green = chg_daily >= 0
         
-        # זיהוי המגמה ובחירת החץ
-        is_uptrend = chg_5m > 0
-        is_reversing = prob_reversal > 75
+        # חישוב RSI ל-5 דקות כדי למצוא קיצון והסתברות היפוך
+        rsi_series = calc_rsi(s_close)
+        curr_rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty and not pd.isna(rsi_series.iloc[-1]) else 50
         
-        if is_uptrend and not is_reversing:
-            arrow_class = "arrow-huge-green"
-            arrow_char = "⬆"
-            status_text = "עלייה חזקה"
-        elif is_uptrend and is_reversing:
-            arrow_class = "arrow-prep-short" # מחליף לירוק-אדום
-            arrow_char = "⬇"
-            status_text = "התקפלות לשורט (הכן פקודה)"
-            prob_reversal = 100 # ננעל
-        elif not is_uptrend and not is_reversing:
-            arrow_class = "arrow-huge-red"
-            arrow_char = "⬇"
-            status_text = "ירידה חזקה"
-        else: # ירידה שמתהפכת לעליה
-            arrow_class = "arrow-prep-long" # מחליף לאדום-ירוק
-            arrow_char = "⬆"
-            status_text = "איסוף ללונג (הכן פקודה)"
-            prob_reversal = 100
+        poc, vah, val = calc_volume_profile(s_close, s_vol)
         
-        # בניית הבלוק הלבן עם הנתונים
+        # חישוב הסתברות היפוך (0-100%)
+        # מבוסס על מרחק ה-RSI מאמצע (50) לכיוון קצוות (20 או 80)
+        prob_reversal = min(max(abs(curr_rsi - 50) * 2.5, 5), 100)
+        
+        # סריקת אותות היסטוריים להצגה על הגרף (לולאת Backtest יומית)
+        signals = []
+        curr_state = "neutral"
+        for i in range(14, len(s_close)):
+            p = s_close.iloc[i]
+            mom = p - s_close.iloc[i-3]
+            if p > vah and mom < 0: new_st = "prep_short"
+            elif p < val and mom > 0: new_st = "prep_long"
+            elif mom > 0 and p > val: new_st = "long"
+            elif mom < 0 and p < vah: new_st = "short"
+            else: new_st = "neutral"
+            
+            if new_st != curr_state and new_st != "neutral":
+                signals.append((s_close.index[i], new_st, p))
+            curr_state = new_st
+        
+        # החלטה על החץ המרכזי והסטטוס
+        mom_now = c_p - s_close.iloc[-3]
+        
+        if mom_now > 0 and prob_reversal < 80:
+            arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה"
+        elif mom_now > 0 and prob_reversal >= 80:
+            arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "התקפלות (הכן פקודת שורט)"
+            if prob_reversal >= 95: prob_reversal = 100
+        elif mom_now < 0 and prob_reversal < 80:
+            arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה"
+        else:
+            arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+            if prob_reversal >= 95: prob_reversal = 100
+            
+        if prob_reversal == 100:
+            # נעילת צבע מלא כשההיפוך הושלם
+            arrow_class = "arrow-huge-red" if "שורט" in status else "arrow-huge-green"
+            status = "היפוך מאושר!"
+            
+        # בלוק ה-HTML לכרטיסייה הלבנה
         html_block = f"""
-        <div style="background-color: #ffffff; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #ddd;">
-            <div style="color: #333; font-size: 20px; font-weight: bold;">{name}</div>
-            <div style="color: #666; font-size: 14px;">הסתברות היפוך: <b>{prob_reversal}%</b></div>
+        <div class="macro-white-card">
+            <div style="color: #222; font-size: 22px; font-weight: bold; margin-bottom: 10px;">{name}</div>
+            <div class="prob-text">סיכוי היפוך: {prob_reversal:.0f}%</div>
             <div class="{arrow_class}">{arrow_char}</div>
-            <div style="color: #333; font-size: 14px; font-weight: bold;">{status_text}</div>
-            <div style="color: #888; font-size: 12px; margin-top: 5px;">שער: {c_p:.2f} ({chg_5m:+.2f}%)</div>
+            <div style="color: #444; font-size: 16px; font-weight: bold; margin: 10px 0;">{status}</div>
+            <div style="color: #222; font-size: 20px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00b300' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
         </div>
         """
         
-        # ציור עמודות השעות האחרונות (Sparklines)
-        s_hourly = macro_hourly[f'Close_{tick}'].dropna().tail(24) # 24 שעות אחרונות
-        
         with cols[idx]:
             st.markdown(html_block, unsafe_allow_html=True)
-            st.plotly_chart(create_hourly_bars(s_hourly, is_uptrend), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_finviz_chart(s_close, signals, is_green, open_p), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
         with cols[idx]:
-            st.warning(f"No Data for {name}")
+            st.warning(f"אין נתונים מספיקים עבור {name}")
 
 st.markdown("---")
 
 # ==========================================
 # 2. מנוע מומנטום וחלוקה לאזורי תקיפה (Long / Short Zones)
 # ==========================================
-st.markdown("### 🎯 טבלת הנכסים למסחר יומי (סורק חכם)")
+st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפות)")
 
 try:
     all_tickers = [data['base'] for data in lev_pairs.values()] + [data['long'] for data in lev_pairs.values()] + [data['short'] for data in lev_pairs.values()]
-    intra_data = fetch_data(all_tickers, period="5d", interval="5m")
+    intra_data = fetch_data(all_tickers, period="1d", interval="5m")
     if isinstance(intra_data.columns, pd.MultiIndex):
         intra_data.columns = [f"{col[0]}_{col[1]}" for col in intra_data.columns]
 except:
@@ -868,7 +863,6 @@ for sec_name, data in lev_pairs.items():
         
         poc, vah, val = calc_volume_profile(s_base, v_base)
         state, target_price = determine_state(c_last, c_prev, poc, vah, val)
-        
         dist_pct = ((target_price - c_last) / c_last)
         
         long_tick, short_tick = data['long'], data['short']
@@ -883,11 +877,11 @@ for sec_name, data in lev_pairs.items():
 
         if power_score > 0:
             if "long" in state:
-                status_html = "הכן פקודה<br><span class='arrow-prepare'>⬆</span>" if "prepare" in state else "אישור מגמה<br><span class='arrow-long'>⬆</span>"
+                status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▲</span>" if "prepare" in state else "<span style='color:green;'>מגמה מאושרת</span><br><span style='font-size:24px;color:green;'>▲</span>"
                 long_candidates.append({'name': long_tick, 'price': c_long, 'target': targ_long, 'pct': pct_long, 'status': status_html, 'score': power_score})
         else:
             if "short" in state:
-                status_html = "הכן פקודה<br><span class='arrow-prepare'>⬇</span>" if "prepare" in state else "אישור מגמה<br><span class='arrow-short'>⬇</span>"
+                status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▼</span>" if "prepare" in state else "<span style='color:red;'>מגמה מאושרת</span><br><span style='font-size:24px;color:red;'>▼</span>"
                 short_candidates.append({'name': short_tick, 'price': c_short, 'target': targ_short, 'pct': pct_short, 'status': status_html, 'score': power_score})
                 
     except Exception as e:
@@ -900,59 +894,56 @@ col_L, col_S = st.columns(2)
 
 with col_L:
     st.markdown("<div class='long-zone'>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #00ff00;'>🟢 סקטורים ללונג (זרימת כסף חיובית)</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #009900;'>🟢 סקטורים ללונג (מומנטום חיובי)</h3>", unsafe_allow_html=True)
     if long_candidates:
         for item in long_candidates:
             st.markdown(f"""
             <div class='card'>
                 <div class='card-title'>{item['name']}</div>
                 <table style='width:100%;'><tr>
-                    <td style='width:33%;'>{item['status']}</td>
+                    <td style='width:33%; font-weight:bold;'>{item['status']}</td>
                     <td style='width:33%;'>
                         <div class='card-value'>{item['price']:.2f}</div>
-                        <div style='font-size:12px;color:#aaa;'>שער נוכחי</div>
+                        <div style='font-size:12px;color:#888;'>שער נוכחי</div>
                     </td>
                     <td style='width:33%;'>
                         <div class='card-target'>{item['target']:.2f}</div>
                         <div class='card-percent'>({item['pct']:+.1f}%)</div>
-                        <div style='font-size:12px;color:#aaa;'>יעד רווח מתגלגל</div>
+                        <div style='font-size:12px;color:#888;'>יעד רווח מתגלגל</div>
                     </td>
                 </tr></table>
             </div><br>
             """, unsafe_allow_html=True)
     else:
-        st.write("אין סקטורים עם מומנטום חיובי ברור כרגע.")
+        st.write("אין סקטורים עם זרימת הון ללונג כרגע.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_S:
     st.markdown("<div class='short-zone'>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #ff0000;'>🔴 סקטורים לשורט (בריחת הון)</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #cc0000;'>🔴 סקטורים לשורט (בריחת הון)</h3>", unsafe_allow_html=True)
     if short_candidates:
         for item in short_candidates:
             st.markdown(f"""
             <div class='card'>
                 <div class='card-title'>{item['name']}</div>
                 <table style='width:100%;'><tr>
-                    <td style='width:33%;'>{item['status']}</td>
+                    <td style='width:33%; font-weight:bold;'>{item['status']}</td>
                     <td style='width:33%;'>
                         <div class='card-value'>{item['price']:.2f}</div>
-                        <div style='font-size:12px;color:#aaa;'>שער נוכחי</div>
+                        <div style='font-size:12px;color:#888;'>שער נוכחי</div>
                     </td>
                     <td style='width:33%;'>
                         <div class='card-target-short'>{item['target']:.2f}</div>
                         <div class='card-percent'>({item['pct']:+.1f}%)</div>
-                        <div style='font-size:12px;color:#aaa;'>יעד רווח מתגלגל</div>
+                        <div style='font-size:12px;color:#888;'>יעד רווח מתגלגל</div>
                     </td>
                 </tr></table>
             </div><br>
             """, unsafe_allow_html=True)
     else:
-        st.write("אין סקטורים עם מומנטום שלילי ברור כרגע.")
+        st.write("אין סקטורים עם זרימת הון לשורט כרגע.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 time.sleep(15)
 st.rerun()
-time.sleep(15)
-st.rerun()
-time.sleep(15)
-st.rerun()
+
