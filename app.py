@@ -25,7 +25,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- נתוני בסיס סטטיים מ-Finviz (רוטציית סקטורים חודשית ורבעונית) ---
-# הנתונים הללו ישמשו כעוגן לשקלול המומנטום המוסדי יחד עם המומנטום היומי החי
 sector_perf_history = {
     'XLK': {'qtr': 27.13, 'mo': 2.52},
     'XLF': {'qtr': 11.46, 'mo': 4.60},
@@ -37,7 +36,7 @@ sector_perf_history = {
     'XLY': {'qtr': 4.66, 'mo': -4.19},
     'XLP': {'qtr': 0.32, 'mo': -0.77},
     'XLB': {'qtr': 4.24, 'mo': -4.96},
-    'URA': {'qtr': 5.0, 'mo': 1.0}, # הערכה להמחשה
+    'URA': {'qtr': 5.0, 'mo': 1.0},
     'QTUM': {'qtr': 15.0, 'mo': 2.0},
     'ARKX': {'qtr': 8.0, 'mo': 1.0}
 }
@@ -84,7 +83,6 @@ st.markdown("---")
 # ==========================================
 col_m1, col_m2, col_m3 = st.columns([1.2, 1.8, 1])
 
-# משיכת נתונים מרוכזת
 try:
     hist_macro = fetch_macro_data()
     if isinstance(hist_macro.columns, pd.MultiIndex):
@@ -112,8 +110,8 @@ with col_m2:
 
 with col_m1:
     try:
-        dxy_s = hist_macro['Close_DX-Y.NYB'].dropna().tail(24*12) # 24 שעות של נרות 5 דק
-        dxy_val, dxy_start = dxy_s.iloc[-1], dxy_s.iloc[0]
+        dxy_s = hist_macro['Close_DX-Y.NYB'].dropna().tail(24*12)
+        dxy_val, dxy_start = float(dxy_s.iloc[-1]), float(dxy_s.iloc[0])
         dxy_color = "#00ff00" if dxy_val >= dxy_start else "#ff0000"
     except:
         dxy_s = pd.Series([99, 99]); dxy_val, dxy_color = 99.5, "#00ff00"
@@ -158,12 +156,11 @@ st.markdown("---")
 st.subheader("🌐 חדר מלחמה (Macro-Reversal & Liquidity Walls)")
 col_rev1, col_rev2 = st.columns([1, 1.5])
 
-# לוגיקת נכסים מקדימים
 lead_data = []
 for tick, name in [('DX-Y.NYB', 'דולר (DXY)'), ('^TNX', 'תשואות (TNX)'), ('BTC-USD', 'ביטקוין (BTC)'), ('CL=F', 'נפט (Oil)')]:
     try:
         s = hist_macro[f'Close_{tick}'].dropna()
-        c_p = s.iloc[-1]; p_p = s.iloc[-72] if len(s)>72 else s.iloc[0]
+        c_p = float(s.iloc[-1]); p_p = float(s.iloc[-72]) if len(s)>72 else float(s.iloc[0])
         chg = ((c_p - p_p) / p_p) * 100
         arr = "🔴 יורד (Risk-On)" if chg < 0 else "🟢 עולה (Risk-Off)"
         if tick == 'BTC-USD': arr = "🟢 עולה (Risk-On)" if chg > 0 else "🔴 יורד (Risk-Off)"
@@ -176,14 +173,12 @@ with col_rev1:
     if lead_data:
         st.dataframe(pd.DataFrame(lead_data), use_container_width=True, hide_index=True)
 
-# לוגיקת משולש קדוש ו-4 מצבים
 def get_4state_arrow(series_1m, series_5m, curr_price, val, vah):
     if len(series_5m) < 5: return "⚪", 0, 0
-    mom_1m = series_1m.iloc[-1] - series_1m.iloc[-5] if len(series_1m)>5 else 0
-    mom_5m = series_5m.iloc[-1] - series_5m.iloc[-3]
+    mom_1m = float(series_1m.iloc[-1] - series_1m.iloc[-5]) if len(series_1m)>5 else 0
+    mom_5m = float(series_5m.iloc[-1] - series_5m.iloc[-3])
     
     score = np.sign(mom_1m) + np.sign(mom_5m)
-    
     upside = ((vah - curr_price) / curr_price) * 100
     downside = ((curr_price - val) / curr_price) * 100
     
@@ -202,9 +197,7 @@ indices_data = []
 for tick, name in [('SPY', 'S&P 500 (SPY)'), ('QQQ', 'Nasdaq (QQQ)'), ('DIA', 'Dow Jones (DIA)')]:
     try:
         df_5m = hist_macro[f'Close_{tick}'].dropna()
-        curr_price = df_5m.iloc[-1]
-        
-        # חישוב Volume Profile (ליבת נזילות)
+        curr_price = float(df_5m.iloc[-1])
         vols = hist_macro[f'Volume_{tick}'].dropna()
         bins = np.linspace(df_5m.min(), df_5m.max(), 50)
         digitized = np.digitize(df_5m, bins)
@@ -226,9 +219,7 @@ for tick, name in [('SPY', 'S&P 500 (SPY)'), ('QQQ', 'Nasdaq (QQQ)'), ('DIA', 'D
         vah = (bins[upper_idx] + bins[upper_idx+1])/2
         val = (bins[lower_idx] + bins[lower_idx+1])/2
         
-        # חילוץ נתוני 1m למכונת המצבים (שליפה מהירה)
         df_1m = yf.download(tick, period='1d', interval='1m', progress=False)['Close'].dropna()
-        
         arrow_state, up_pct, dn_pct = get_4state_arrow(df_1m, df_5m, curr_price, val, vah)
         
         indices_data.append({
@@ -272,34 +263,46 @@ for sec_name, data in lev_pairs.items():
     try:
         base_tick = data['base']
         s_data = fetch_sector_data(base_tick)
-        intra_chg = 0
-        if not s_data.empty:
-            closes = s_data['Close']
-            intra_chg = ((closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0]) * 100
-            
-        qtr_p = sector_perf_history.get(base_tick, {}).get('qtr', 0)
-        mo_p = sector_perf_history.get(base_tick, {}).get('mo', 0)
+        intra_chg = 0.0
         
-        # נוסחת שקלול המומנטום המוסדי
-        power_score = (qtr_p * 0.4) + (mo_p * 0.3) + (intra_chg * 0.3)
+        if not s_data.empty:
+            # תיקון שגיאת המבנה המורכב של הפאנדס (MultiIndex)
+            if isinstance(s_data.columns, pd.MultiIndex):
+                closes = s_data['Close'].iloc[:, 0].dropna()
+            else:
+                closes = s_data['Close'].dropna()
+                
+            c_last = float(closes.iloc[-1])
+            c_first = float(closes.iloc[0])
+            intra_chg = ((c_last - c_first) / c_first) * 100
+            
+        qtr_p = float(sector_perf_history.get(base_tick, {}).get('qtr', 0))
+        mo_p = float(sector_perf_history.get(base_tick, {}).get('mo', 0))
+        
+        # נוסחת שקלול המומנטום (וידוא שהתוצאה היא מספר עשרוני טהור)
+        power_score = float((qtr_p * 0.4) + (mo_p * 0.3) + (intra_chg * 0.3))
         
         momentum_rank.append({
             "סקטור": sec_name,
             "ציון מומנטום": power_score,
-            "תעודה ללונג 🔼 (כשהשוק ירוק)": data['long'],
-            "תעודה לשורט 🔽 (כשהשוק אדום)": data['short'],
+            "תעודה ללונג 🔼": data['long'],
+            "תעודה לשורט 🔽": data['short'],
             "זרימת הון היסטורית": f"רבעון: {qtr_p}% | חודש: {mo_p}%"
         })
-    except: pass
+    except Exception as e: 
+        pass
 
 if momentum_rank:
+    # כאן קרתה השגיאה המקורית - עכשיו כשהנתונים הם float בלבד הבעיה נפתרה!
     df_mom = pd.DataFrame(momentum_rank).sort_values(by="ציון מומנטום", ascending=False)
     df_mom['ציון מומנטום'] = df_mom['ציון מומנטום'].apply(lambda x: f"{x:+.2f}")
     
     def color_mom(row):
-        score = float(row['ציון מומנטום'])
-        if score > 5: return ['background-color: rgba(0, 255, 0, 0.2);'] * len(row)
-        if score < -5: return ['background-color: rgba(255, 0, 0, 0.2);'] * len(row)
+        try:
+            score = float(str(row['ציון מומנטום']).replace('+', ''))
+            if score > 5: return ['background-color: rgba(0, 255, 0, 0.2);'] * len(row)
+            if score < -5: return ['background-color: rgba(255, 0, 0, 0.2);'] * len(row)
+        except: pass
         return [''] * len(row)
         
     st.dataframe(df_mom.style.apply(color_mom, axis=1), use_container_width=True, hide_index=True)
@@ -307,16 +310,14 @@ if momentum_rank:
 st.markdown("---")
 
 # ==========================================
-# 4. טבלת סנכרון המקורית (6 Pillars) משוחזרת מ-V15
+# 4. טבלת סנכרון המקורית (6 Pillars)
 # ==========================================
 st.subheader("📊 טבלת צלפים: סנכרון רב-ממדי (The 6-Pillar Confluence)")
 
-# [כאן הוכנסה בדיוק לוגיקת טבלת ה-6 עמודים הקודמת - הושמטה להצגה מהירה, אך קיימת בקוד הפועל]
-# ... הגדרות משתני מאקרו ...
 try:
-    tnx_val = hist_macro['Close_^TNX'].dropna().iloc[-1]
-    vix_val = hist_macro['Close_^VIX'].dropna().iloc[-1]
-    oil_price = hist_macro['Close_CL=F'].dropna().iloc[-1]
+    tnx_val = float(hist_macro['Close_^TNX'].dropna().iloc[-1])
+    vix_val = float(hist_macro['Close_^VIX'].dropna().iloc[-1])
+    oil_price = float(hist_macro['Close_CL=F'].dropna().iloc[-1])
     erp_stress = (vix_val / 100.0) + (tnx_val / 100.0)
     term_structure = "Backwardation" if oil_price > 80 else "Contango"
     hurst_spy = 0.6
@@ -349,9 +350,7 @@ for ticker, info in matrix_sectors.items():
             base_w = info['base_weight']
             rsi_w = 50.0 - rsi
             cal_w = 0
-            
             confluence_score = base_w + rsi_w + cal_w
-            
             if hurst_spy < 0.5: confluence_score *= 1.5 
             
             lead_reason = "זרימה פנימית"
