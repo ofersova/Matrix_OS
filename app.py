@@ -572,6 +572,7 @@ import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
+import pytz
 
 # --- הגדרות עמוד ---
 st.set_page_config(page_title="Matrix OS - Attack Board", layout="wide", page_icon="⚡")
@@ -588,27 +589,27 @@ st.markdown("""
     .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #111; }
     .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
     .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
+    .card-percent { font-size: 16px; color: #666; }
     
     .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; }
     
-    /* עיצוב חצים במאקרו */
-    .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
-    .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
+    .arrow-huge-green { font-size: 80px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; }
+    .arrow-huge-red { font-size: 80px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; }
     
     .arrow-prep-short {
-        font-size: 75px;
-        background: linear-gradient(to bottom, #00cc00 20%, #cc0000 80%);
+        font-size: 80px;
+        background: linear-gradient(to bottom, #00cc00 30%, #cc0000 70%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     .arrow-prep-long {
-        font-size: 75px;
-        background: linear-gradient(to top, #cc0000 20%, #00cc00 80%);
+        font-size: 80px;
+        background: linear-gradient(to top, #cc0000 30%, #00cc00 70%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     
-    .prob-text { font-size: 16px; font-weight: bold; color: #444; background-color: #f0f0f0; padding: 5px 12px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
+    .prob-text { font-size: 18px; font-weight: bold; color: #222; background-color: #f4f4f4; padding: 5px 15px; border-radius: 25px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -634,15 +635,12 @@ lev_pairs = {
 def fetch_data(tickers, period='1d', interval='5m'):
     df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
     if not df.empty:
-        df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
+        # ניקוי נרות ריקים כדי למנוע קווים מקבילים (מסנן גם סופ"שים וימי חג)
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.loc[df['Volume'].sum(axis=1) > 0]
+        else:
+            df = df.loc[df['Volume'] > 0]
     return df
-
-def calc_rsi(series, window=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
 
 def calc_volume_profile(prices, vols):
     if len(prices) < 2: return prices.iloc[-1], prices.iloc[-1], prices.iloc[-1]
@@ -678,7 +676,6 @@ def create_candlestick_chart(df, signals, open_price):
         elif sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.002
         elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.998
         else: continue
-        
         y_pos = "bottom" if "long" in sig_type else "top"
         fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=26, weight="bold"), yanchor=y_pos)
         
@@ -687,7 +684,7 @@ def create_candlestick_chart(df, signals, open_price):
 
 now_dt = datetime.utcnow() + timedelta(hours=3)
 st.title("⚔️ Attack Board - לוח תקיפה מוסדי")
-st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.write(f"זמן מערכת (ישראל): {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
@@ -726,14 +723,16 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # --- לולאת State Machine מחמירה לסינון רעשים ---
+        # --- מכונת מצבים (State Machine) עם חסימת 15 הדקות הראשונות ---
         signals = []
-        current_state = 0 # 1 = Long, -1 = Short
-        prep_state = 0 # 1 = PrepLong, -1 = PrepShort
+        current_state = 0 
+        prep_state = 0 
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
         
-        for i in range(5, len(df_today)):
+        # החוק הקריטי החדש: מתעלמים לחלוטין מ-3 הנרות הראשונים (15 דקות של Amateur Hour)
+        # האלגוריתם מתחיל לבדוק מגמות רק מהנר הרביעי של היום
+        for i in range(3, len(df_today)):
             price = df_today['Close'].iloc[i]
             low = df_today['Low'].iloc[i]
             high = df_today['High'].iloc[i]
@@ -744,44 +743,44 @@ for idx, (tick, name) in enumerate(names.items()):
             is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
             is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
             
-            # מעבר משורט להכנת לונג
             if current_state != 1 and prep_state != 1 and is_accum:
                 signals.append((df_today.index[i], "prep_long", low))
                 prep_state = 1
-            # אישור לונג
             elif prep_state == 1 and score >= 1:
                 signals.append((df_today.index[i], "long", low))
                 current_state = 1
                 prep_state = 0
-            
-            # מעבר מלונג להכנת שורט
             elif current_state != -1 and prep_state != -1 and is_dist:
                 signals.append((df_today.index[i], "prep_short", high))
                 prep_state = -1
-            # אישור שורט
             elif prep_state == -1 and score <= -1:
                 signals.append((df_today.index[i], "short", high))
                 current_state = -1
                 prep_state = 0
                 
-        # --- קביעת תצוגת הקוביה בזמן אמת ---
+        # --- תצוגת הקוביה בזמן אמת ---
         prob_reversal = 100 if prep_state == 0 else 75
         
-        if current_state == 1 and prep_state == 0:
-            arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
-        elif current_state == -1 and prep_state == 0:
-            arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
-        elif prep_state == 1:
-            arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
-        elif prep_state == -1:
-            arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+        # אם טרם חלפו 15 דקות במסחר היומי (אין עדיין מספיק נרות ב-df_today), הצג "ממתין להתייצבות"
+        if len(df_today) < 3:
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה (15 דקות)"
+            prob_reversal = 0
         else:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
+            if current_state == 1 and prep_state == 0:
+                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
+            elif current_state == -1 and prep_state == 0:
+                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+            elif prep_state == 1:
+                arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+            elif prep_state == -1:
+                arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+            else:
+                arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
 
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
