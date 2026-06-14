@@ -601,6 +601,8 @@ st.markdown("""
     }
     
     .prob-text { font-size: 18px; font-weight: bold; color: #222; background-color: #f4f4f4; padding: 5px 15px; border-radius: 25px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
+    .warning-text { color: #cc0000; font-size: 14px; font-weight: bold; margin-top: 5px; background-color: #ffe6e6; padding: 5px; border-radius: 5px;}
+    .lmt-box { background-color: #e6f0ff; padding: 12px; border-radius: 8px; margin-top: 15px; border: 1px solid #b3d1ff; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -706,14 +708,14 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
         pct_to_target = ((target_price - current_p) / current_p) * 100
         sign = "+" if pct_to_target > 0 else ""
         fig.add_hline(y=target_price, line_dash="dash", line_color=t1_color, line_width=2, 
-                      annotation_text=f"<b>יעד 1 ({sign}{pct_to_target:.2f}%)</b>", 
+                      annotation_text=f"<b>יעד 1: {target_price:.2f} ({sign}{pct_to_target:.2f}%)</b>", 
                       annotation_position="top right", annotation_font=dict(color=t1_color, size=22))
     
     if target2_price:
         pct_to_t2 = ((target2_price - current_p) / current_p) * 100
         sign2 = "+" if pct_to_t2 > 0 else ""
         fig.add_hline(y=target2_price, line_dash="dash", line_color="#800080", line_width=2, 
-                      annotation_text=f"<b>יעד 2 קיצון ({sign2}{pct_to_t2:.2f}%)</b>", 
+                      annotation_text=f"<b>יעד 2: {target2_price:.2f} ({sign2}{pct_to_t2:.2f}%)</b>", 
                       annotation_position="top right", annotation_font=dict(color="#800080", size=22))
                       
     if broken_level:
@@ -730,7 +732,6 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
         y_pos = "bottom" if "long" in sig_type else "top"
         fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=32, weight="bold"), yanchor=y_pos)
         
-    # קיבוע קנה המידה - מניעת עיוותים וגרירות
     fig.update_layout(
         dragmode=False,
         margin=dict(l=0, r=80, t=10, b=0),
@@ -923,10 +924,7 @@ for sec_name, data in lev_pairs.items():
                 'target2_base': lev_target2,
                 'broken_base': lev_broken,
                 'lev_c': lev_c,
-                'lev_target': lev_target,
-                'lev_target2': lev_target2,
                 'lev_pct': lev_pct,
-                'lev_pct2': lev_pct2,
                 'state': 'prep' if prep_state == 1 else 'conf'
             })
             
@@ -978,10 +976,7 @@ for sec_name, data in lev_pairs.items():
                 'target2_base': lev_target2,
                 'broken_base': lev_broken,
                 'lev_c': lev_c,
-                'lev_target': lev_target,
-                'lev_target2': lev_target2,
                 'lev_pct': lev_pct,
-                'lev_pct2': lev_pct2,
                 'state': 'prep' if prep_state == -1 else 'conf'
             })
             
@@ -997,6 +992,8 @@ if long_candidates:
         col_chart, col_text = st.columns([3, 1])
         
         with col_text:
+            limit_buy_price = item['lev_c'] * 1.0015 # Marketable Limit: 0.15% buffer
+            
             if item['state'] == 'prep':
                 arrow_class = "arrow-prep-long"
                 arrow_char = "⬆"
@@ -1010,12 +1007,14 @@ if long_candidates:
             
             st.markdown(f"""
             <div style='text-align: right; direction: rtl;'>
-                <div style='font-size:28px; font-weight:bold;'>{item['name']} - LONG</div>
+                <div style='font-size:32px; font-weight:bold; color:#006600; border-bottom: 2px solid #00cc00; padding-bottom: 5px; margin-bottom: 15px;'>{item['name']}</div>
                 <div class='{arrow_class}'>{arrow_char}</div>
-                <div style='font-size:24px; font-weight:bold; color:{status_color}; margin-bottom: 10px;'>{status_text}</div>
+                <div style='font-size:24px; font-weight:bold; color:{status_color}; margin-bottom: 15px;'>{status_text}</div>
                 <div style='font-size:22px; color:#444;'>שער נוכחי: <b>{item['lev_c']:.2f}</b></div>
-                <div style='font-size:28px; font-weight:bold; color:#00cc00; margin-top: 15px;'>יעד 1: {item['lev_target']:.2f} (+{item['lev_pct']:.2f}%)</div>
-                <div style='font-size:28px; font-weight:bold; color:#800080; margin-top: 5px;'>יעד 2: {item['lev_target2']:.2f} (+{item['lev_pct2']:.2f}%)</div>
+                <div class='lmt-box'>
+                    <div style='font-size:18px; color:#0055ff;'>שער LMT מומלץ (Marketable Limit):</div>
+                    <div style='font-size:26px; font-weight:bold; color:#0055ff;'>{limit_buy_price:.2f}</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -1029,6 +1028,8 @@ if short_candidates:
         col_chart, col_text = st.columns([3, 1])
         
         with col_text:
+            limit_buy_price = item['lev_c'] * 1.0015 # Marketable Limit: 0.15% buffer
+            
             if item['state'] == 'prep':
                 arrow_class = "arrow-prep-long"
                 arrow_char = "⬆"
@@ -1042,12 +1043,14 @@ if short_candidates:
             
             st.markdown(f"""
             <div style='text-align: right; direction: rtl;'>
-                <div style='font-size:28px; font-weight:bold;'>{item['name']} - SHORT</div>
+                <div style='font-size:32px; font-weight:bold; color:#990000; border-bottom: 2px solid #cc0000; padding-bottom: 5px; margin-bottom: 15px;'>{item['name']}</div>
                 <div class='{arrow_class}'>{arrow_char}</div>
-                <div style='font-size:24px; font-weight:bold; color:{status_color}; margin-bottom: 10px;'>{status_text}</div>
+                <div style='font-size:24px; font-weight:bold; color:{status_color}; margin-bottom: 15px;'>{status_text}</div>
                 <div style='font-size:22px; color:#444;'>שער נוכחי: <b>{item['lev_c']:.2f}</b></div>
-                <div style='font-size:28px; font-weight:bold; color:#cc0000; margin-top: 15px;'>יעד 1: {item['lev_target']:.2f} (+{item['lev_pct']:.2f}%)</div>
-                <div style='font-size:28px; font-weight:bold; color:#800080; margin-top: 5px;'>יעד 2: {item['lev_target2']:.2f} (+{item['lev_pct2']:.2f}%)</div>
+                <div class='lmt-box'>
+                    <div style='font-size:18px; color:#0055ff;'>שער LMT מומלץ (Marketable Limit):</div>
+                    <div style='font-size:26px; font-weight:bold; color:#0055ff;'>{limit_buy_price:.2f}</div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
