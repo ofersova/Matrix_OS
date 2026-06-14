@@ -734,13 +734,13 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
         fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=28, weight="bold"), yanchor=y_pos)
         
     fig.update_layout(
-        margin=dict(l=0, r=40, t=5, b=0), # הוספת שוליים מימין למספרים
+        margin=dict(l=0, r=40, t=5, b=0),
         height=300, 
         xaxis_rangeslider_visible=False, 
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
         xaxis=dict(visible=True, showgrid=False), 
-        yaxis=dict(visible=True, showgrid=True, gridcolor='#eee', side='right') # ציר Y מיושר לימין
+        yaxis=dict(visible=True, showgrid=True, gridcolor='#eee', side='right')
     )
     return fig
 
@@ -752,7 +752,7 @@ st.markdown("---")
 # ==========================================
 # 1. מנוע המאקרו (אינדיקטורים מובילים)
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (מנוע תלת-שלבי: V-Shape $\\rightarrow$ איסוף יום $\\rightarrow$ MOC סגירה)")
+st.markdown("### 📊 אינדיקטורים מובילים (מנוע הגיבוי + מסנן שעת כוח)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -820,7 +820,7 @@ for idx, (tick, name) in enumerate(names.items()):
         
         with macro_cols[idx]:
             st.markdown(html_block, unsafe_allow_html=True)
-            st.plotly_chart(create_advanced_candlestick(df_today, signals, open_p, target_price=None, broken_level=None), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_advanced_candlestick(df_today, signals, open_p, target_price=None, broken_level=None, target2_price=None), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
         pass
@@ -828,7 +828,7 @@ for idx, (tick, name) in enumerate(names.items()):
 st.markdown("---")
 
 # ==========================================
-# 2. אזורי תקיפה דינמיים (סורק תעודות ממונפות)
+# 2. אזורי תקיפה דינמיים (סורק תעודות ממונפות פי 3)
 # ==========================================
 st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפות פי 3)")
 
@@ -876,63 +876,100 @@ for sec_name, data in lev_pairs.items():
         
         signals, current_state, prep_state = run_3_phase_engine(df_today, vah, val)
         
-        base_target_price = None
-        base_target2_price = None
-        broken_level = None
-        dist_pct = 0.0
-        
+        # --- לונג ממונף ---
         if current_state == 1 or prep_state == 1:
             if base_c < vah: 
                 base_target_price = vah
                 base_target2_price = vah + (vah - poc)
+                broken_level = None
             else: 
                 base_target_price = vah + (vah - poc)
                 base_target2_price = vah + ((vah - poc) * 2)
                 broken_level = vah
+                
             dist_pct = ((base_target_price - base_c) / base_c) * 100
+            dist2_pct = ((base_target2_price - base_c) / base_c) * 100
             
             long_tick = data['long']
             lev_c = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
+            lev_open = float(intra_data[f'Open_{long_tick}'].dropna().iloc[0])
+            
+            # בניית גרף התעודה הממונפת עצמה
+            df_lev = pd.DataFrame({
+                'Open': intra_data[f'Open_{long_tick}'].dropna(),
+                'High': intra_data[f'High_{long_tick}'].dropna(),
+                'Low': intra_data[f'Low_{long_tick}'].dropna(),
+                'Close': intra_data[f'Close_{long_tick}'].dropna()
+            })
+            df_lev_today = df_lev[df_lev.index.date == last_day].copy() if not df_lev.empty else df_lev
+            
             lev_target = lev_c * (1 + (dist_pct/100 * data['lev']))
+            lev_target2 = lev_c * (1 + (dist2_pct/100 * data['lev']))
+            lev_broken = lev_c * (1 - (0.01 * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
             
             long_candidates.append({
                 'name': f"{sec_name} ({long_tick})",
-                'base_df': df_today,
+                'base_df': df_lev_today,
                 'signals': signals,
-                'open_p': base_open,
-                'target_base': base_target_price,
-                'target2_base': base_target2_price,
-                'broken_base': broken_level,
+                'open_p': lev_open,
+                'target_base': lev_target,
+                'target2_base': lev_target2,
+                'broken_base': lev_broken,
                 'lev_c': lev_c,
                 'lev_target': lev_target,
                 'lev_pct': lev_pct,
                 'state': 'prep' if prep_state == 1 else 'conf'
             })
             
+        # --- שורט ממונף (סוחרים בו כלונג!) ---
         elif current_state == -1 or prep_state == -1:
+            # נכס הבסיס יורד = תעודת השורט עולה! לכן היעדים בתעודה עצמה נמצאים *למעלה*
             if base_c > val: 
                 base_target_price = val
                 base_target2_price = val - (poc - val)
+                broken_level = None
             else:
                 base_target_price = val - (poc - val)
                 base_target2_price = val - ((poc - val) * 2)
                 broken_level = val
-            dist_pct = ((base_c - base_target_price) / base_c) * 100 
+                
+            dist_pct = ((base_c - base_target_price) / base_c) * 100 # אחוז ירידה של נכס הבסיס
+            dist2_pct = ((base_c - base_target2_price) / base_c) * 100
             
             short_tick = data['short']
             lev_c = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
+            lev_open = float(intra_data[f'Open_{short_tick}'].dropna().iloc[0])
+            
+            df_lev = pd.DataFrame({
+                'Open': intra_data[f'Open_{short_tick}'].dropna(),
+                'High': intra_data[f'High_{short_tick}'].dropna(),
+                'Low': intra_data[f'Low_{short_tick}'].dropna(),
+                'Close': intra_data[f'Close_{short_tick}'].dropna()
+            })
+            df_lev_today = df_lev[df_lev.index.date == last_day].copy() if not df_lev.empty else df_lev
+            
+            # אנחנו מוסיפים את הרווח למעלה, כי קנינו שורט
             lev_target = lev_c * (1 + (dist_pct/100 * data['lev']))
+            lev_target2 = lev_c * (1 + (dist2_pct/100 * data['lev']))
+            lev_broken = lev_c * (1 - (0.01 * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
+            
+            # שינוי ויזואלי של האיתותים כך שיתאימו לגרף של קנייה עולה
+            adjusted_signals = []
+            for sig_t, sig_type, sig_p in signals:
+                lev_sig_price = df_lev_today['Close'].loc[sig_t] if sig_t in df_lev_today.index else lev_c
+                if sig_type == "prep_short": adjusted_signals.append((sig_t, "prep_long", lev_sig_price))
+                elif sig_type == "short": adjusted_signals.append((sig_t, "long", lev_sig_price))
             
             short_candidates.append({
                 'name': f"{sec_name} ({short_tick})",
-                'base_df': df_today,
-                'signals': signals,
-                'open_p': base_open,
-                'target_base': base_target_price,
-                'target2_base': base_target2_price,
-                'broken_base': broken_level,
+                'base_df': df_lev_today,
+                'signals': adjusted_signals,
+                'open_p': lev_open,
+                'target_base': lev_target,
+                'target2_base': lev_target2,
+                'broken_base': lev_broken,
                 'lev_c': lev_c,
                 'lev_target': lev_target,
                 'lev_pct': lev_pct,
@@ -954,8 +991,8 @@ if long_candidates:
             st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']}</div>", unsafe_allow_html=True)
             if item['state'] == 'prep':
                 st.markdown("<div class='arrow-prep-long'>⬆</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold;'>הכן פקודת קנייה</div>", unsafe_allow_html=True)
-                st.markdown("<div class='warning-text'>⚠ סכנת שורט! הכן לונג בלבד</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold;'>הכן פקודת קנייה (LONG)</div>", unsafe_allow_html=True)
+                st.markdown("<div class='warning-text'>⚠ סכנה! הכן קנייה בלבד - אל תשגר!</div>", unsafe_allow_html=True)
             else:
                 st.markdown("<div class='arrow-huge-green'>⬆</div>", unsafe_allow_html=True)
                 st.markdown("<div style='font-weight:bold; color:green;'>מגמה מאושרת ללונג</div>", unsafe_allow_html=True)
@@ -974,14 +1011,14 @@ if short_candidates:
         col_text, col_chart = st.columns([1, 3])
         
         with col_text:
-            st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']} (ממונף לשורט)</div>", unsafe_allow_html=True)
             if item['state'] == 'prep':
-                st.markdown("<div class='arrow-prep-short'>⬇</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold;'>הכן פקודת שורט</div>", unsafe_allow_html=True)
-                st.markdown("<div class='warning-text'>⚠ סכנת קנייה! הכן שורט בלבד</div>", unsafe_allow_html=True)
+                st.markdown("<div class='arrow-prep-long'>⬆</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold;'>הכן פקודת קנייה (תעודת SHORT)</div>", unsafe_allow_html=True)
+                st.markdown("<div class='warning-text'>⚠ סכנה! השוק בשורט, אתה קונה! הכן בלבד.</div>", unsafe_allow_html=True)
             else:
-                st.markdown("<div class='arrow-huge-red'>⬇</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold; color:red;'>מגמה מאושרת לשורט</div>", unsafe_allow_html=True)
+                st.markdown("<div class='arrow-huge-green'>⬆</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold; color:green;'>קניית תעודת שורט מאושרת</div>", unsafe_allow_html=True)
             
             st.markdown(f"<div class='target-text-red'>+{item['lev_pct']:.2f}%</div>", unsafe_allow_html=True)
             st.markdown(f"<div style='font-size:18px;'>יעד: {item['lev_target']:.2f}</div>", unsafe_allow_html=True)
@@ -992,4 +1029,4 @@ if short_candidates:
         st.markdown("</div>", unsafe_allow_html=True)
 
 time.sleep(15)
-st.rerun()
+st.rerun()st.rerun()
