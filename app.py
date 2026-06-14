@@ -617,7 +617,8 @@ lev_pairs = {
     'SEMICONDUCTORS': {'base': 'SOXX', 'long': 'SOXL', 'short': 'SOXS', 'lev': 3}
 }
 
-@st.cache_data(ttl=15)
+# --- הפתרון לקריסות סופ"ש: show_spinner=False מונע פתיחת תהליכונים מיותרים ---
+@st.cache_data(ttl=15, show_spinner=False)
 def fetch_data(tickers, period='5d', interval='5m'): 
     df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
     if not df.empty:
@@ -852,7 +853,6 @@ for sec_name, data in lev_pairs.items():
         
         signals, current_state, prep_state = run_3_phase_engine(df_today, vah, val)
         
-        # חישוב יעד ומתיחות הקפיץ על נכס הבסיס
         base_target_price = None
         broken_level = None
         dist_pct = 0.0
@@ -910,7 +910,7 @@ for sec_name, data in lev_pairs.items():
     except Exception as e:
         continue
 
-# מיון לפי הקפיץ המתוח ביותר (אחוז רווח צפוי הגבוה ביותר)
+# מיון לפי הקפיץ המתוח ביותר
 long_candidates = sorted(long_candidates, key=lambda x: x['lev_pct'], reverse=True)
 short_candidates = sorted(short_candidates, key=lambda x: x['lev_pct'], reverse=True)
 
