@@ -564,7 +564,6 @@ if pro_data:
         return [''] * len(row)
     styled_pro = df_pro_clean.style.set_properties(**{'font-size': '15px', 'text-align': 'center', 'white-space': 'pre-wrap'}).set_table_styles([dict(selector='th', props=[('font-size', '15px'), ('text-align', 'center')])]).apply(style_pro_matrix, axis=1)
     st.dataframe(styled_pro, use_container_width=True, hide_index=True, height=650)
-else:import streamlit as st
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -602,9 +601,6 @@ st.markdown("""
     }
     
     .prob-text { font-size: 18px; font-weight: bold; color: #222; background-color: #f4f4f4; padding: 5px 15px; border-radius: 25px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
-    .target-text-green { font-size: 26px; font-weight: bold; color: #00cc00; margin-top: 5px;}
-    .target-text-red { font-size: 26px; font-weight: bold; color: #cc0000; margin-top: 5px;}
-    .warning-text { color: #cc0000; font-size: 14px; font-weight: bold; margin-top: 5px; background-color: #ffe6e6; padding: 5px; border-radius: 5px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -695,7 +691,7 @@ def run_3_phase_engine(df_today, vah, val):
                 
     return signals, current_state, prep_state
 
-def create_advanced_candlestick(df, signals, open_price, target_price=None, broken_level=None, target2_price=None):
+def create_advanced_candlestick(df, signals, open_price, target_price=None, broken_level=None, target2_price=None, zone_type="long"):
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
         increasing_line_color='#00cc00', decreasing_line_color='#cc0000',
@@ -704,25 +700,26 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
     fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
     
     current_p = df['Close'].iloc[-1]
+    t1_color = "#00cc00" if zone_type == "long" else "#cc0000"
     
     if target_price:
         pct_to_target = ((target_price - current_p) / current_p) * 100
         sign = "+" if pct_to_target > 0 else ""
-        fig.add_hline(y=target_price, line_dash="dash", line_color="#cc0000", line_width=2, 
+        fig.add_hline(y=target_price, line_dash="dash", line_color=t1_color, line_width=2, 
                       annotation_text=f"<b>יעד 1 ({sign}{pct_to_target:.2f}%)</b>", 
-                      annotation_position="top right", annotation_font=dict(color="#cc0000", size=18))
+                      annotation_position="top right", annotation_font=dict(color=t1_color, size=22))
     
     if target2_price:
         pct_to_t2 = ((target2_price - current_p) / current_p) * 100
         sign2 = "+" if pct_to_t2 > 0 else ""
         fig.add_hline(y=target2_price, line_dash="dash", line_color="#800080", line_width=2, 
                       annotation_text=f"<b>יעד 2 קיצון ({sign2}{pct_to_t2:.2f}%)</b>", 
-                      annotation_position="top right", annotation_font=dict(color="#800080", size=18))
+                      annotation_position="top right", annotation_font=dict(color="#800080", size=22))
                       
     if broken_level:
         fig.add_hline(y=broken_level, line_dash="dash", line_color="#00cc00", line_width=2, 
                       annotation_text="<b>תמיכה נפרצה</b>", 
-                      annotation_position="bottom right", annotation_font=dict(color="#00cc00", size=18))
+                      annotation_position="bottom right", annotation_font=dict(color="#00cc00", size=22))
     
     for sig_time, sig_type, sig_price in signals:
         if sig_type == "prep_short": sym, c, offset = "▼", "#ff9900", 1.002
@@ -731,16 +728,18 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
         elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.997
         else: continue
         y_pos = "bottom" if "long" in sig_type else "top"
-        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=28, weight="bold"), yanchor=y_pos)
+        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=32, weight="bold"), yanchor=y_pos)
         
+    # קיבוע קנה המידה - מניעת עיוותים וגרירות
     fig.update_layout(
-        margin=dict(l=0, r=40, t=5, b=0),
-        height=300, 
+        dragmode=False,
+        margin=dict(l=0, r=80, t=10, b=0),
+        height=380, 
         xaxis_rangeslider_visible=False, 
         paper_bgcolor='rgba(0,0,0,0)', 
         plot_bgcolor='rgba(0,0,0,0)', 
-        xaxis=dict(visible=True, showgrid=False), 
-        yaxis=dict(visible=True, showgrid=True, gridcolor='#eee', side='right')
+        xaxis=dict(visible=True, showgrid=False, fixedrange=True), 
+        yaxis=dict(visible=True, showgrid=True, gridcolor='#eee', side='right', fixedrange=True)
     )
     return fig
 
@@ -823,7 +822,7 @@ for idx, (tick, name) in enumerate(names.items()):
         
         with macro_cols[idx]:
             st.markdown(html_block, unsafe_allow_html=True)
-            st.plotly_chart(create_advanced_candlestick(df_today, signals, open_p, target_price=None, broken_level=None, target2_price=None), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_advanced_candlestick(df_today, signals, open_p, target_price=None, broken_level=None, target2_price=None, zone_type="macro"), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
         pass
@@ -908,8 +907,8 @@ for sec_name, data in lev_pairs.items():
             lev_target2 = lev_c * (1 + (dist2_pct/100 * data['lev']))
             lev_broken = lev_c * (1 + (((broken_level - base_c) / base_c) * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
+            lev_pct2 = dist2_pct * data['lev']
             
-            # --- התיקון: תרגום חצי האיתות למחירי הלונג ---
             adjusted_signals = []
             for sig_t, sig_type, sig_p in signals:
                 lev_sig_price = df_lev_today['Close'].loc[sig_t] if sig_t in df_lev_today.index else lev_c
@@ -925,7 +924,9 @@ for sec_name, data in lev_pairs.items():
                 'broken_base': lev_broken,
                 'lev_c': lev_c,
                 'lev_target': lev_target,
+                'lev_target2': lev_target2,
                 'lev_pct': lev_pct,
+                'lev_pct2': lev_pct2,
                 'state': 'prep' if prep_state == 1 else 'conf'
             })
             
@@ -960,6 +961,7 @@ for sec_name, data in lev_pairs.items():
             lev_target2 = lev_c * (1 + (dist2_pct/100 * data['lev']))
             lev_broken = lev_c * (1 + (((base_c - broken_level) / base_c) * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
+            lev_pct2 = dist2_pct * data['lev']
             
             adjusted_signals = []
             for sig_t, sig_type, sig_p in signals:
@@ -977,7 +979,9 @@ for sec_name, data in lev_pairs.items():
                 'broken_base': lev_broken,
                 'lev_c': lev_c,
                 'lev_target': lev_target,
+                'lev_target2': lev_target2,
                 'lev_pct': lev_pct,
+                'lev_pct2': lev_pct2,
                 'state': 'prep' if prep_state == -1 else 'conf'
             })
             
@@ -990,47 +994,65 @@ short_candidates = sorted(short_candidates, key=lambda x: x['lev_pct'], reverse=
 if long_candidates:
     for item in long_candidates:
         st.markdown("<div class='long-zone'>", unsafe_allow_html=True)
-        col_text, col_chart = st.columns([1, 3])
+        col_chart, col_text = st.columns([3, 1])
         
         with col_text:
-            st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']}</div>", unsafe_allow_html=True)
             if item['state'] == 'prep':
-                st.markdown("<div class='arrow-prep-long'>⬆</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold;'>הכן פקודת קנייה (LONG)</div>", unsafe_allow_html=True)
-                st.markdown("<div class='warning-text'>⚠ סכנה! הכן קנייה בלבד - אל תשגר!</div>", unsafe_allow_html=True)
+                arrow_class = "arrow-prep-long"
+                arrow_char = "⬆"
+                status_text = "LONG הכן פקודת קניה, סכנה אל תשגר!"
+                status_color = "#ff9900"
             else:
-                st.markdown("<div class='arrow-huge-green'>⬆</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold; color:green;'>מגמה מאושרת ללונג</div>", unsafe_allow_html=True)
+                arrow_class = "arrow-huge-green"
+                arrow_char = "⬆"
+                status_text = "LONG מגמה מאושרת"
+                status_color = "#00cc00"
             
-            st.markdown(f"<div class='target-text-green'>+{item['lev_pct']:.2f}%</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size:18px;'>יעד: {item['lev_target']:.2f}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size:16px; color:#666;'>נוכחי: {item['lev_c']:.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style='text-align: right; direction: rtl;'>
+                <div style='font-size:28px; font-weight:bold;'>{item['name']} - LONG</div>
+                <div class='{arrow_class}'>{arrow_char}</div>
+                <div style='font-size:24px; font-weight:bold; color:{status_color}; margin-bottom: 10px;'>{status_text}</div>
+                <div style='font-size:22px; color:#444;'>שער נוכחי: <b>{item['lev_c']:.2f}</b></div>
+                <div style='font-size:28px; font-weight:bold; color:#00cc00; margin-top: 15px;'>יעד 1: {item['lev_target']:.2f} (+{item['lev_pct']:.2f}%)</div>
+                <div style='font-size:28px; font-weight:bold; color:#800080; margin-top: 5px;'>יעד 2: {item['lev_target2']:.2f} (+{item['lev_pct2']:.2f}%)</div>
+            </div>
+            """, unsafe_allow_html=True)
             
         with col_chart:
-            st.plotly_chart(create_advanced_candlestick(item['base_df'], item['signals'], item['open_p'], item['target_base'], item['broken_base'], item['target2_base']), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_advanced_candlestick(item['base_df'], item['signals'], item['open_p'], item['target_base'], item['broken_base'], item['target2_base'], "long"), use_container_width=True, config={'displayModeBar': False})
         st.markdown("</div>", unsafe_allow_html=True)
 
 if short_candidates:
     for item in short_candidates:
         st.markdown("<div class='short-zone'>", unsafe_allow_html=True)
-        col_text, col_chart = st.columns([1, 3])
+        col_chart, col_text = st.columns([3, 1])
         
         with col_text:
-            st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']} (ממונף לשורט)</div>", unsafe_allow_html=True)
             if item['state'] == 'prep':
-                st.markdown("<div class='arrow-prep-long'>⬆</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold;'>הכן פקודת קנייה (תעודת SHORT)</div>", unsafe_allow_html=True)
-                st.markdown("<div class='warning-text'>⚠ סכנה! השוק בשורט, אתה קונה! הכן בלבד.</div>", unsafe_allow_html=True)
+                arrow_class = "arrow-prep-long"
+                arrow_char = "⬆"
+                status_text = "SHORT הכן פקודת קניה, סכנה אל תשגר!"
+                status_color = "#ff9900"
             else:
-                st.markdown("<div class='arrow-huge-green'>⬆</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-weight:bold; color:green;'>קניית תעודת שורט מאושרת</div>", unsafe_allow_html=True)
+                arrow_class = "arrow-huge-green"
+                arrow_char = "⬆"
+                status_text = "SHORT מגמה מאושרת"
+                status_color = "#00cc00"
             
-            st.markdown(f"<div class='target-text-red'>+{item['lev_pct']:.2f}%</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size:18px;'>יעד: {item['lev_target']:.2f}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size:16px; color:#666;'>נוכחי: {item['lev_c']:.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style='text-align: right; direction: rtl;'>
+                <div style='font-size:28px; font-weight:bold;'>{item['name']} - SHORT</div>
+                <div class='{arrow_class}'>{arrow_char}</div>
+                <div style='font-size:24px; font-weight:bold; color:{status_color}; margin-bottom: 10px;'>{status_text}</div>
+                <div style='font-size:22px; color:#444;'>שער נוכחי: <b>{item['lev_c']:.2f}</b></div>
+                <div style='font-size:28px; font-weight:bold; color:#cc0000; margin-top: 15px;'>יעד 1: {item['lev_target']:.2f} (+{item['lev_pct']:.2f}%)</div>
+                <div style='font-size:28px; font-weight:bold; color:#800080; margin-top: 5px;'>יעד 2: {item['lev_target2']:.2f} (+{item['lev_pct2']:.2f}%)</div>
+            </div>
+            """, unsafe_allow_html=True)
             
         with col_chart:
-            st.plotly_chart(create_advanced_candlestick(item['base_df'], item['signals'], item['open_p'], item['target_base'], item['broken_base'], item['target2_base']), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_advanced_candlestick(item['base_df'], item['signals'], item['open_p'], item['target_base'], item['broken_base'], item['target2_base'], "short"), use_container_width=True, config={'displayModeBar': False})
         st.markdown("</div>", unsafe_allow_html=True)
 
 time.sleep(15)
