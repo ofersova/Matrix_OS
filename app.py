@@ -1029,4 +1029,4 @@ if short_candidates:
         st.markdown("</div>", unsafe_allow_html=True)
 
 time.sleep(15)
-st.rerun()st.rerun()
+st.rerun()
