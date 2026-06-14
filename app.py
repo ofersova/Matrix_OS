@@ -705,7 +705,6 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
     
     current_p = df['Close'].iloc[-1]
     
-    # חישובי אחוזים והוספת קווים בולטים לצד ימין
     if target_price:
         pct_to_target = ((target_price - current_p) / current_p) * 100
         sign = "+" if pct_to_target > 0 else ""
@@ -876,7 +875,6 @@ for sec_name, data in lev_pairs.items():
         
         signals, current_state, prep_state = run_3_phase_engine(df_today, vah, val)
         
-        # חישוב עובי תעלת הנזילות המינימלית (VAH - VAL) כדי למנוע יעדים חופפים
         va_height = max(vah - val, base_c * 0.005) 
         
         # --- לונג ממונף ---
@@ -911,10 +909,16 @@ for sec_name, data in lev_pairs.items():
             lev_broken = lev_c * (1 + (((broken_level - base_c) / base_c) * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
             
+            # --- התיקון: תרגום חצי האיתות למחירי הלונג ---
+            adjusted_signals = []
+            for sig_t, sig_type, sig_p in signals:
+                lev_sig_price = df_lev_today['Close'].loc[sig_t] if sig_t in df_lev_today.index else lev_c
+                adjusted_signals.append((sig_t, sig_type, lev_sig_price))
+            
             long_candidates.append({
                 'name': f"{sec_name} ({long_tick})",
                 'base_df': df_lev_today,
-                'signals': signals,
+                'signals': adjusted_signals,
                 'open_p': lev_open,
                 'target_base': lev_target,
                 'target2_base': lev_target2,
@@ -925,7 +929,7 @@ for sec_name, data in lev_pairs.items():
                 'state': 'prep' if prep_state == 1 else 'conf'
             })
             
-        # --- שורט ממונף (סוחרים בו כלונג!) ---
+        # --- שורט ממונף ---
         elif current_state == -1 or prep_state == -1:
             if base_c > val: 
                 base_target_price = val
