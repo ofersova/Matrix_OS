@@ -580,60 +580,49 @@ st.markdown("""
     <style>
     .reportview-container { background: #f4f6f9; }
     
-    .long-zone { border: 3px solid #00cc00; border-radius: 10px; padding: 15px; background-color: rgba(0, 204, 0, 0.05); margin-bottom: 20px; }
-    .short-zone { border: 3px solid #cc0000; border-radius: 10px; padding: 15px; background-color: rgba(204, 0, 0, 0.05); margin-bottom: 20px; }
-    
-    .card { background-color: #ffffff; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border: 1px solid #ddd; }
-    .card-title { font-size: 15px; color: #444; margin-bottom: 5px; font-weight: bold; }
-    .card-value { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #111; }
-    .card-target { font-size: 18px; color: #00cc00; font-weight: bold; margin-bottom: 5px; }
-    .card-target-short { font-size: 18px; color: #cc0000; font-weight: bold; margin-bottom: 5px; }
+    .long-zone { border: 3px solid #00cc00; border-radius: 12px; padding: 20px; background-color: rgba(0, 204, 0, 0.03); margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,204,0,0.1);}
+    .short-zone { border: 3px solid #cc0000; border-radius: 12px; padding: 20px; background-color: rgba(204, 0, 0, 0.03); margin-bottom: 25px; box-shadow: 0 4px 10px rgba(204,0,0,0.1);}
     
     .macro-white-card { background-color: #ffffff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e0e0e0; margin-bottom: 20px;}
     
-    .arrow-huge-green { font-size: 75px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
-    .arrow-huge-red { font-size: 75px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc; }
+    .arrow-huge-green { font-size: 80px; color: #00cc00; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc;}
+    .arrow-huge-red { font-size: 80px; color: #cc0000; font-weight: bold; line-height: 1; margin: 10px 0; text-shadow: 1px 1px 2px #ccc;}
     
-    .arrow-prep-short {
-        font-size: 75px;
-        background: linear-gradient(to bottom, #00cc00 20%, #cc0000 80%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-weight: bold; line-height: 1; margin: 10px 0;
-    }
     .arrow-prep-long {
-        font-size: 75px;
-        background: linear-gradient(to top, #cc0000 20%, #00cc00 80%);
+        font-size: 80px;
+        background: linear-gradient(to top, #cc0000 30%, #00cc00 70%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-weight: bold; line-height: 1; margin: 10px 0;
+    }
+    .arrow-prep-short {
+        font-size: 80px;
+        background: linear-gradient(to bottom, #00cc00 30%, #cc0000 70%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: bold; line-height: 1; margin: 10px 0;
     }
     
-    .prob-text { font-size: 16px; font-weight: bold; color: #444; background-color: #f0f0f0; padding: 5px 12px; border-radius: 20px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
+    .prob-text { font-size: 18px; font-weight: bold; color: #222; background-color: #f4f4f4; padding: 5px 15px; border-radius: 25px; display: inline-block; border: 1px solid #ccc; margin-bottom: 10px;}
+    .target-text-green { font-size: 26px; font-weight: bold; color: #00cc00; margin-top: 5px;}
+    .target-text-red { font-size: 26px; font-weight: bold; color: #cc0000; margin-top: 5px;}
+    .warning-text { color: #cc0000; font-size: 14px; font-weight: bold; margin-top: 5px; background-color: #ffe6e6; padding: 5px; border-radius: 5px;}
     </style>
 """, unsafe_allow_html=True)
 
 # --- נתוני בסיס ---
-sector_perf_history = {
-    'XLK': {'qtr': 27.13, 'mo': 2.52}, 'XLF': {'qtr': 11.46, 'mo': 4.60},
-    'XLU': {'qtr': -4.30, 'mo': -1.52}, 'XLE': {'qtr': 0.67, 'mo': -1.58},
-    'XLRE': {'qtr': 6.94, 'mo': 2.46}, 'XLV': {'qtr': 3.22, 'mo': 3.11},
-    'XLI': {'qtr': 9.17, 'mo': 1.64}, 'XLY': {'qtr': 4.66, 'mo': -4.19},
-    'XLP': {'qtr': 0.32, 'mo': -0.77}, 'XLB': {'qtr': 4.24, 'mo': -4.96}
-}
-
 lev_pairs = {
-    'טכנולוגיה': {'base': 'XLK', 'long': 'TQQQ', 'short': 'SQQQ'},
-    'שבבים': {'base': 'SOXX', 'long': 'SOXL', 'short': 'SOXS'},
-    'פיננסים': {'base': 'XLF', 'long': 'FAS', 'short': 'FAZ'},
-    'אנרגיה': {'base': 'XLE', 'long': 'ERX', 'short': 'ERY'},
-    'בריאות': {'base': 'XLV', 'long': 'CURE', 'short': 'RXD'},
-    'תעשייה': {'base': 'XLI', 'long': 'DUSL', 'short': 'XLI'},
+    'S&P 500': {'base': 'SPY', 'long': 'UPRO', 'short': 'SPXU', 'lev': 3},
+    'NASDAQ 100': {'base': 'QQQ', 'long': 'TQQQ', 'short': 'SQQQ', 'lev': 3},
+    'DOW JONES': {'base': 'DIA', 'long': 'UDOW', 'short': 'SDOW', 'lev': 3},
+    'RUSSELL 2000': {'base': 'IWM', 'long': 'URTY', 'short': 'SRTY', 'lev': 3},
+    'SEMICONDUCTORS': {'base': 'SOXX', 'long': 'SOXL', 'short': 'SOXS', 'lev': 3}
 }
 
 @st.cache_data(ttl=15)
-def fetch_data(tickers, period='5d', interval='5m'):
+def fetch_data(tickers, period='5d', interval='5m'): 
     df = yf.download(tickers, period=period, interval=interval, auto_adjust=True, progress=False)
     if not df.empty:
-        df = df.loc[df['Volume'].sum(axis=1) > 0] if isinstance(df.columns, pd.MultiIndex) else df.loc[df['Volume'] > 0]
+        if isinstance(df.columns, pd.MultiIndex): df = df.loc[df['Volume'].sum(axis=1) > 0]
+        else: df = df.loc[df['Volume'] > 0]
     return df
 
 def calc_volume_profile(prices, vols):
@@ -656,7 +645,57 @@ def calc_volume_profile(prices, vols):
             lower_idx -= 1; va_volume += vol_profile[lower_idx]
     return bin_centers[poc_idx], bin_centers[upper_idx], bin_centers[lower_idx]
 
-def create_candlestick_chart(df, signals, open_price):
+def run_3_phase_engine(df_today, vah, val):
+    signals = []
+    current_state = 0 
+    prep_state = 0 
+    
+    for i in range(5, len(df_today)):
+        o, c, l, h = df_today['Open'].iloc[i], df_today['Close'].iloc[i], df_today['Low'].iloc[i], df_today['High'].iloc[i]
+        vol = df_today['Volume'].iloc[i]
+        vol_sma = df_today['Vol_SMA'].iloc[i]
+        score = df_today['Trend_Score'].iloc[i]
+        e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
+        v_prev1 = df_today['Volume'].iloc[i-1] if i > 0 else 0
+        
+        if i < 66:
+            is_vol_spike = (vol > vol_sma * 1.1) or (vol > v_prev1 * 1.3)
+            is_accum = (l <= val * 1.003) and is_vol_spike
+            is_dist = (h >= vah * 0.997) and is_vol_spike
+        else:
+            is_vol_spike_eod = (vol > vol_sma * 1.5) or (vol > v_prev1 * 1.5)
+            is_accum = (l <= val * 1.003) and is_vol_spike_eod
+            is_dist = (h >= vah * 0.997) and is_vol_spike_eod
+
+        if current_state != 1 and prep_state != 1 and is_accum:
+            signals.append((df_today.index[i], "prep_long", l))
+            prep_state = 1
+        elif prep_state == 1:
+            is_no_supply = (vol < v_prev1) and (c >= l) and (vol < vol_sma * 0.9)
+            vsa_conf = is_no_supply and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] > h)
+            mom_conf = (e9 > e21) and (score >= 1)
+            if vsa_conf or mom_conf:
+                idx_sig = i+1 if (vsa_conf and not mom_conf and i+1 < len(df_today)) else i
+                signals.append((df_today.index[idx_sig], "long", df_today['Low'].iloc[idx_sig]))
+                current_state = 1
+                prep_state = 0
+        
+        if current_state != -1 and prep_state != -1 and is_dist:
+            signals.append((df_today.index[i], "prep_short", h))
+            prep_state = -1
+        elif prep_state == -1:
+            is_no_demand = (vol < v_prev1) and (c <= h) and (vol < vol_sma * 0.9)
+            vsa_conf_short = is_no_demand and (i+1 < len(df_today) and df_today['Close'].iloc[i+1] < l)
+            mom_conf_short = (e9 < e21) and (score <= -1)
+            if vsa_conf_short or mom_conf_short:
+                idx_sig = i+1 if (vsa_conf_short and not mom_conf_short and i+1 < len(df_today)) else i
+                signals.append((df_today.index[idx_sig], "short", df_today['High'].iloc[idx_sig]))
+                current_state = -1
+                prep_state = 0
+                
+    return signals, current_state, prep_state
+
+def create_advanced_candlestick(df, signals, open_price, target_price=None, broken_level=None):
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
         increasing_line_color='#00cc00', decreasing_line_color='#cc0000',
@@ -664,28 +703,32 @@ def create_candlestick_chart(df, signals, open_price):
     )])
     fig.add_hline(y=open_price, line_dash="dot", line_color="gray", line_width=1)
     
+    if target_price:
+        fig.add_hline(y=target_price, line_dash="dash", line_color="#cc0000", line_width=2, annotation_text="יעד נזילות", annotation_position="top left", annotation_font=dict(color="#cc0000"))
+    if broken_level:
+        fig.add_hline(y=broken_level, line_dash="dash", line_color="#00cc00", line_width=2, annotation_text="תמיכה נפרצה", annotation_position="bottom left", annotation_font=dict(color="#00cc00"))
+    
     for sig_time, sig_type, sig_price in signals:
         if sig_type == "prep_short": sym, c, offset = "▼", "#ff9900", 1.002
         elif sig_type == "prep_long": sym, c, offset = "▲", "#ff9900", 0.998
-        elif sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.002
-        elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.998
+        elif sig_type == "short": sym, c, offset = "▼", "#cc0000", 1.003
+        elif sig_type == "long": sym, c, offset = "▲", "#00cc00", 0.997
         else: continue
-        
         y_pos = "bottom" if "long" in sig_type else "top"
-        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=26, weight="bold"), yanchor=y_pos)
+        fig.add_annotation(x=sig_time, y=sig_price * offset, text=sym, showarrow=False, font=dict(color=c, size=28, weight="bold"), yanchor=y_pos)
         
-    fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=250, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=True, showgrid=False), yaxis=dict(visible=True, showgrid=True, gridcolor='#eee'))
+    fig.update_layout(margin=dict(l=0, r=0, t=5, b=0), height=300, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=True, showgrid=False), yaxis=dict(visible=True, showgrid=True, gridcolor='#eee'))
     return fig
 
 now_dt = datetime.utcnow() + timedelta(hours=3)
 st.title("⚔️ Attack Board - לוח תקיפה מוסדי")
-st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.write(f"זמן מערכת (ישראל): {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
-# 1. מנוע המאקרו: פתרון פיצול הבוקר והיום (Split-Engine)
+# 1. מנוע המאקרו (אינדיקטורים מובילים)
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי VWAP בפתיחה $\\rightarrow$ מומנטום להמשך היום)")
+st.markdown("### 📊 אינדיקטורים מובילים (מנוע תלת-שלבי: V-Shape $\\rightarrow$ איסוף יום $\\rightarrow$ MOC סגירה)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -696,13 +739,18 @@ except:
     macro_5m = pd.DataFrame()
 
 names = {'DIA': 'DOW JONES', 'QQQ': 'NASDAQ 100', 'SPY': 'S&P 500'}
-cols = st.columns(3)
+macro_cols = st.columns(3)
 
 for idx, (tick, name) in enumerate(names.items()):
     try:
         df_5m = macro_5m[[f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']].dropna()
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         if len(df_5m) < 10: raise Exception
+        
+        df_5m['Vol_SMA'] = df_5m['Volume'].rolling(10).mean()
+        df_5m['Mom_5m'] = df_5m['Close'].diff(1)
+        df_5m['Mom_15m'] = df_5m['Close'].diff(3)
+        df_5m['Trend_Score'] = np.sign(df_5m['Mom_5m']) + np.sign(df_5m['Mom_15m'])
         
         last_day = df_5m.index[-1].date()
         df_today = df_5m[df_5m.index.date == last_day].copy()
@@ -713,136 +761,59 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # --- חישובי בסיס של הגיבוי הטוב שלך ---
-        df_today['Vol_SMA'] = df_today['Volume'].rolling(10).mean()
-        df_today['Mom_5m'] = df_today['Close'].diff(1)
-        df_today['Mom_15m'] = df_today['Close'].diff(3)
-        df_today['Trend_Score'] = np.sign(df_today['Mom_5m']) + np.sign(df_today['Mom_15m'])
-        
-        # --- חישובי VWAP עבור 30 הדקות הראשונות בלבד ---
-        df_today['Typical_Price'] = (df_today['High'] + df_today['Low'] + df_today['Close']) / 3
-        df_today['Cum_Vol'] = df_today['Volume'].cumsum()
-        df_today['Cum_Vol_Price'] = (df_today['Typical_Price'] * df_today['Volume']).cumsum()
-        df_today['VWAP'] = df_today['Cum_Vol_Price'] / df_today['Cum_Vol']
-        df_today['VWAP_Var'] = (((df_today['Typical_Price'] - df_today['VWAP'])**2) * df_today['Volume']).cumsum() / df_today['Cum_Vol']
-        df_today['VWAP_Std'] = np.sqrt(df_today['VWAP_Var'])
-        df_today['VWAP_Upper2'] = df_today['VWAP'] + (2 * df_today['VWAP_Std'])
-        df_today['VWAP_Lower2'] = df_today['VWAP'] - (2 * df_today['VWAP_Std'])
+        df_today['EMA9'] = df_today['Close'].ewm(span=9, adjust=False).mean()
+        df_today['EMA21'] = df_today['Close'].ewm(span=21, adjust=False).mean()
         
         poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
-        
-        signals = []
-        current_state = 0 
-        prep_state = 0 
-        
-        # לולאת המנוע המפוצל (Hybrid Two-Stage)
-        for i in range(1, len(df_today)):
-            price = df_today['Close'].iloc[i]
-            low = df_today['Low'].iloc[i]
-            high = df_today['High'].iloc[i]
-            open_c = df_today['Open'].iloc[i]
-            vol = df_today['Volume'].iloc[i]
-            vol_sma = df_today['Vol_SMA'].iloc[i]
-            score = df_today['Trend_Score'].iloc[i]
-            
-            is_morning = i <= 6 # עד הדקה ה-35 (7 נרות ראשונים)
-            is_power_hour = i >= 66 # 60 הדקות האחרונות של היום (MOC)
-            
-            if is_morning:
-                # ==================================================
-                # מנוע בוקר (לכידת V-Shape עם VWAP Bands)
-                # ==================================================
-                vwap_lower = df_today['VWAP_Lower2'].iloc[i]
-                vwap_upper = df_today['VWAP_Upper2'].iloc[i]
+        signals, current_state, prep_state = run_3_phase_engine(df_today, vah, val)
                 
-                is_accum_vwap = (low <= vwap_lower)
-                is_dist_vwap = (high >= vwap_upper)
-                
-                if current_state != 1 and prep_state != 1 and is_accum_vwap:
-                    signals.append((df_today.index[i], "prep_long", low))
-                    prep_state = 1
-                elif prep_state == 1 and price > open_c: # נר ירוק עולה = אישור
-                    signals.append((df_today.index[i], "long", low))
-                    current_state = 1
-                    prep_state = 0
-                    
-                if current_state != -1 and prep_state != -1 and is_dist_vwap:
-                    signals.append((df_today.index[i], "prep_short", high))
-                    prep_state = -1
-                elif prep_state == -1 and price < open_c: # נר אדום יורד = אישור
-                    signals.append((df_today.index[i], "short", high))
-                    current_state = -1
-                    prep_state = 0
-                    
-            else:
-                # ==================================================
-                # מנוע יום (הגיבוי המושלם שלך: מומנטום + אזור ערך)
-                # כולל סלקציה והחמרת נפח ל-60 הדקות האחרונות
-                # ==================================================
-                if is_power_hour:
-                    is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.5)
-                    is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.5)
-                else:
-                    is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
-                    is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
-                
-                if current_state != 1 and prep_state != 1 and is_accum:
-                    signals.append((df_today.index[i], "prep_long", low))
-                    prep_state = 1
-                elif prep_state == 1 and score >= 1:
-                    signals.append((df_today.index[i], "long", low))
-                    current_state = 1
-                    prep_state = 0
-                    
-                if current_state != -1 and prep_state != -1 and is_dist:
-                    signals.append((df_today.index[i], "prep_short", high))
-                    prep_state = -1
-                elif prep_state == -1 and score <= -1:
-                    signals.append((df_today.index[i], "short", high))
-                    current_state = -1
-                    prep_state = 0
-                
-        # קביעת סטטוס זמן אמת
         prob_reversal = 100 if prep_state == 0 else 75
-        if current_state == 1 and prep_state == 0:
-            arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
-        elif current_state == -1 and prep_state == 0:
-            arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
-        elif prep_state == 1:
-            arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
-        elif prep_state == -1:
-            arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+        
+        if len(df_today) < 3:
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⏳", "ממתין להתייצבות פתיחה"
+            prob_reversal = 0
         else:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
+            if current_state == 1 and prep_state == 0:
+                arrow_class, arrow_char, status = "arrow-huge-green", "⬆", "מגמת עלייה מאושרת"
+            elif current_state == -1 and prep_state == 0:
+                arrow_class, arrow_char, status = "arrow-huge-red", "⬇", "מגמת ירידה מאושרת"
+            elif prep_state == 1:
+                arrow_class, arrow_char, status = "arrow-prep-long", "⬆", "איסוף (הכן פקודת לונג)"
+            elif prep_state == -1:
+                arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
+            else:
+                arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
 
         html_block = f"""
         <div class="macro-white-card">
             <div style="color: #222; font-size: 24px; font-weight: bold; margin-bottom: 10px;">{name}</div>
-            <div class="prob-text">סיכוי היפוך: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
+            <div class="prob-text">סיכוי היפוך מחושב: <span style="color:{'#cc0000' if prep_state != 0 else '#00cc00'};">{prob_reversal:.0f}%</span></div>
             <div class="{arrow_class}">{arrow_char}</div>
             <div style="color: #444; font-size: 18px; font-weight: bold; margin: 10px 0;">{status}</div>
             <div style="color: #000; font-size: 22px; font-weight: bold;">{c_p:.2f} <span style="font-size:16px; color:{'#00cc00' if is_green else '#cc0000'};">({chg_daily:+.2f}%)</span></div>
         </div>
         """
         
-        with cols[idx]:
+        with macro_cols[idx]:
             st.markdown(html_block, unsafe_allow_html=True)
-            st.plotly_chart(create_candlestick_chart(df_today, signals, open_p), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_advanced_candlestick(df_today, signals, open_p), use_container_width=True, config={'displayModeBar': False})
             
     except Exception as e:
-        if idx < 3:
-            with cols[idx]: st.warning(f"אין נתונים מספיקים עבור {name}")
+        pass
 
 st.markdown("---")
 
 # ==========================================
-# 2. אזורי תקיפה (סורק תעודות ממונפות)
+# 2. אזורי תקיפה דינמיים (סורק תעודות ממונפות)
 # ==========================================
-st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפות)")
+st.markdown("### 🎯 אזורי תקיפה (סורק תעודות ממונפות פי 3)")
+
+all_fetch_tickers = []
+for k, v in lev_pairs.items():
+    all_fetch_tickers.extend([v['base'], v['long'], v['short']])
 
 try:
-    all_tickers = [data['base'] for data in lev_pairs.values()] + [data['long'] for data in lev_pairs.values()] + [data['short'] for data in lev_pairs.values()]
-    intra_data = fetch_data(all_tickers, period="5d", interval="5m")
+    intra_data = fetch_data(all_fetch_tickers, period="5d", interval="5m")
     if isinstance(intra_data.columns, pd.MultiIndex):
         intra_data.columns = [f"{col[0]}_{col[1]}" for col in intra_data.columns]
 except: intra_data = pd.DataFrame()
@@ -852,62 +823,142 @@ long_candidates, short_candidates = [], []
 for sec_name, data in lev_pairs.items():
     try:
         base_tick = data['base']
-        s_base = intra_data[f'Close_{base_tick}'].dropna()
-        v_base = intra_data[f'Volume_{base_tick}'].dropna()
-        if len(s_base) < 2: continue
+        if f'Close_{base_tick}' not in intra_data.columns: continue
         
-        last_day = s_base.index[-1].date()
-        s_base_today = s_base[s_base.index.date == last_day]
-        v_base_today = v_base[v_base.index.date == last_day]
-        if s_base_today.empty: s_base_today = s_base.tail(78); v_base_today = v_base.tail(78)
+        df_base = pd.DataFrame({
+            'Open': intra_data[f'Open_{base_tick}'].dropna(),
+            'High': intra_data[f'High_{base_tick}'].dropna(),
+            'Low': intra_data[f'Low_{base_tick}'].dropna(),
+            'Close': intra_data[f'Close_{base_tick}'].dropna(),
+            'Volume': intra_data[f'Volume_{base_tick}'].dropna()
+        })
         
-        c_last = float(s_base_today.iloc[-1])
-        intra_chg = ((c_last - float(s_base_today.iloc[0])) / float(s_base_today.iloc[0])) * 100
-        qtr_p = float(sector_perf_history.get(base_tick, {}).get('qtr', 0))
-        mo_p = float(sector_perf_history.get(base_tick, {}).get('mo', 0))
-        power_score = float((qtr_p * 0.4) + (mo_p * 0.3) + (intra_chg * 0.3))
+        if len(df_base) < 10: continue
         
-        poc, vah, val = calc_volume_profile(s_base_today, v_base_today)
-        long_tick, short_tick = data['long'], data['short']
-        c_long = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
-        c_short = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
+        df_base['Vol_SMA'] = df_base['Volume'].rolling(10).mean()
+        df_base['Mom_5m'] = df_base['Close'].diff(1)
+        df_base['Mom_15m'] = df_base['Close'].diff(3)
+        df_base['Trend_Score'] = np.sign(df_base['Mom_5m']) + np.sign(df_base['Mom_15m'])
+        df_base['EMA9'] = df_base['Close'].ewm(span=9, adjust=False).mean()
+        df_base['EMA21'] = df_base['Close'].ewm(span=21, adjust=False).mean()
         
-        if power_score > 0:
-            target_price = vah + (vah - poc) if c_last > vah else vah
-            dist_pct = ((target_price - c_last) / c_last)
-            targ_long = c_long * (1 + (dist_pct * 3))
-            pct_long = ((targ_long - c_long) / c_long) * 100
+        last_day = df_base.index[-1].date()
+        df_today = df_base[df_base.index.date == last_day].copy()
+        if df_today.empty or len(df_today) < 10: df_today = df_base.tail(78).copy()
+        
+        base_c = float(df_today['Close'].iloc[-1])
+        base_open = float(df_today['Open'].iloc[0])
+        poc, vah, val = calc_volume_profile(df_today['Close'], df_today['Volume'])
+        
+        signals, current_state, prep_state = run_3_phase_engine(df_today, vah, val)
+        
+        # חישוב יעד ומתיחות הקפיץ על נכס הבסיס
+        base_target_price = None
+        broken_level = None
+        dist_pct = 0.0
+        
+        if current_state == 1 or prep_state == 1:
+            if base_c < vah: base_target_price = vah
+            else: 
+                base_target_price = vah + (vah - poc)
+                broken_level = vah
+            dist_pct = ((base_target_price - base_c) / base_c) * 100
             
-            status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▲</span>" if c_last < val else "<span style='color:green;'>מגמה מאושרת</span><br><span style='font-size:24px;color:green;'>▲</span>"
-            long_candidates.append({'name': long_tick, 'price': c_long, 'target': targ_long, 'pct': pct_long, 'status': status_html, 'score': power_score})
+            long_tick = data['long']
+            lev_c = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
+            lev_target = lev_c * (1 + (dist_pct/100 * data['lev']))
+            lev_pct = dist_pct * data['lev']
             
-        else:
-            target_price = val - (poc - val) if c_last < val else val
-            dist_pct = ((target_price - c_last) / c_last)
-            targ_short = c_short * (1 + (-dist_pct * 3)) 
-            pct_short = ((targ_short - c_short) / c_short) * 100
+            long_candidates.append({
+                'name': f"{sec_name} ({long_tick})",
+                'base_df': df_today,
+                'signals': signals,
+                'open_p': base_open,
+                'target_base': base_target_price,
+                'broken_base': broken_level,
+                'lev_c': lev_c,
+                'lev_target': lev_target,
+                'lev_pct': lev_pct,
+                'state': 'prep' if prep_state == 1 else 'conf'
+            })
             
-            status_html = "<span style='color:orange;'>הכן פקודה</span><br><span style='font-size:24px;color:orange;'>▼</span>" if c_last > vah else "<span style='color:red;'>מגמה מאושרת</span><br><span style='font-size:24px;color:red;'>▼</span>"
-            short_candidates.append({'name': short_tick, 'price': c_short, 'target': targ_short, 'pct': pct_short, 'status': status_html, 'score': power_score})
-                
-    except: continue
+        elif current_state == -1 or prep_state == -1:
+            if base_c > val: base_target_price = val
+            else:
+                base_target_price = val - (poc - val)
+                broken_level = val
+            dist_pct = ((base_c - base_target_price) / base_c) * 100 
+            
+            short_tick = data['short']
+            lev_c = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
+            lev_target = lev_c * (1 + (dist_pct/100 * data['lev']))
+            lev_pct = dist_pct * data['lev']
+            
+            short_candidates.append({
+                'name': f"{sec_name} ({short_tick})",
+                'base_df': df_today,
+                'signals': signals,
+                'open_p': base_open,
+                'target_base': base_target_price,
+                'broken_base': broken_level,
+                'lev_c': lev_c,
+                'lev_target': lev_target,
+                'lev_pct': lev_pct,
+                'state': 'prep' if prep_state == -1 else 'conf'
+            })
+            
+    except Exception as e:
+        continue
 
-long_candidates = sorted(long_candidates, key=lambda x: x['score'], reverse=True)
-short_candidates = sorted(short_candidates, key=lambda x: x['score'])
+# מיון לפי הקפיץ המתוח ביותר (אחוז רווח צפוי הגבוה ביותר)
+long_candidates = sorted(long_candidates, key=lambda x: x['lev_pct'], reverse=True)
+short_candidates = sorted(short_candidates, key=lambda x: x['lev_pct'], reverse=True)
 
-col_L, col_S = st.columns(2)
-
-with col_L:
-    st.markdown("<div class='long-zone'><h3 style='text-align: center; color: #009900;'>🟢 סקטורים ללונג</h3>", unsafe_allow_html=True)
+if long_candidates:
     for item in long_candidates:
-        st.markdown(f"<div class='card'><div class='card-title'>{item['name']}</div><table style='width:100%;'><tr><td style='width:33%; font-weight:bold;'>{item['status']}</td><td style='width:33%;'><div class='card-value'>{item['price']:.2f}</div><div style='font-size:12px;color:#888;'>שער נוכחי</div></td><td style='width:33%;'><div class='card-target'>{item['target']:.2f}</div><div class='card-percent'>({item['pct']:+.1f}%)</div><div style='font-size:12px;color:#888;'>יעד מתגלגל</div></td></tr></table></div><br>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<div class='long-zone'>", unsafe_allow_html=True)
+        col_text, col_chart = st.columns([1, 3])
+        
+        with col_text:
+            st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']}</div>", unsafe_allow_html=True)
+            if item['state'] == 'prep':
+                st.markdown("<div class='arrow-prep-long'>⬆</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold;'>הכן פקודת קנייה</div>", unsafe_allow_html=True)
+                st.markdown("<div class='warning-text'>⚠ זהירות! סכנת שורט - הכן קנייה בלבד!</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div class='arrow-huge-green'>⬆</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold; color:green;'>מגמה מאושרת ללונג</div>", unsafe_allow_html=True)
+            
+            st.markdown(f"<div class='target-text-green'>+{item['lev_pct']:.2f}%</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:18px;'>שער יעד: {item['lev_target']:.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:16px; color:#666;'>שער נוכחי: {item['lev_c']:.2f}</div>", unsafe_allow_html=True)
+            
+        with col_chart:
+            st.plotly_chart(create_advanced_candlestick(item['base_df'], item['signals'], item['open_p'], item['target_base'], item['broken_base']), use_container_width=True, config={'displayModeBar': False})
+        st.markdown("</div>", unsafe_allow_html=True)
 
-with col_S:
-    st.markdown("<div class='short-zone'><h3 style='text-align: center; color: #cc0000;'>🔴 סקטורים לשורט</h3>", unsafe_allow_html=True)
+if short_candidates:
     for item in short_candidates:
-        st.markdown(f"<div class='card'><div class='card-title'>{item['name']}</div><table style='width:100%;'><tr><td style='width:33%; font-weight:bold;'>{item['status']}</td><td style='width:33%;'><div class='card-value'>{item['price']:.2f}</div><div style='font-size:12px;color:#888;'>שער נוכחי</div></td><td style='width:33%;'><div class='card-target-short'>{item['target']:.2f}</div><div class='card-percent'>({item['pct']:+.1f}%)</div><div style='font-size:12px;color:#888;'>יעד מתגלגל</div></td></tr></table></div><br>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<div class='short-zone'>", unsafe_allow_html=True)
+        col_text, col_chart = st.columns([1, 3])
+        
+        with col_text:
+            st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{item['name']}</div>", unsafe_allow_html=True)
+            if item['state'] == 'prep':
+                st.markdown("<div class='arrow-prep-short'>⬇</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold;'>הכן פקודת שורט</div>", unsafe_allow_html=True)
+                st.markdown("<div class='warning-text'>⚠ זהירות! סכנת קנייה - הכן שורט בלבד!</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div class='arrow-huge-red'>⬇</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-weight:bold; color:red;'>מגמה מאושרת לשורט</div>", unsafe_allow_html=True)
+            
+            st.markdown(f"<div class='target-text-red'>+{item['lev_pct']:.2f}%</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:18px;'>שער יעד: {item['lev_target']:.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:16px; color:#666;'>שער נוכחי: {item['lev_c']:.2f}</div>", unsafe_allow_html=True)
+            
+        with col_chart:
+            st.plotly_chart(create_advanced_candlestick(item['base_df'], item['signals'], item['open_p'], item['target_base'], item['broken_base']), use_container_width=True, config={'displayModeBar': False})
+        st.markdown("</div>", unsafe_allow_html=True)
 
 time.sleep(15)
 st.rerun()
