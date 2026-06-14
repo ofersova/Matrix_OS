@@ -679,13 +679,13 @@ def create_candlestick_chart(df, signals, open_price):
 
 now_dt = datetime.utcnow() + timedelta(hours=3)
 st.title("⚔️ Attack Board - לוח תקיפה מוסדי")
-st.write(f"זמן מערכת: {now_dt.strftime('%H:%M:%S')}")
+st.write(f"זמן מערכת (ישראל): {now_dt.strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # ==========================================
-# 1. מנוע המאקרו: פתרון פיצול הבוקר והיום (Split-Engine)
+# 1. מנוע המאקרו: פתרון תלת-שלבי (בוקר, צהריים, שעת הכוח)
 # ==========================================
-st.markdown("### 📊 אינדיקטורים מובילים (זיהוי VWAP בפתיחה $\\rightarrow$ מומנטום להמשך היום)")
+st.markdown("### 📊 אינדיקטורים מובילים (מנוע תלת-שלבי: VWAP $\\rightarrow$ EMA $\\rightarrow$ Power Hour)")
 
 macro_tickers = ['DIA', 'QQQ', 'SPY']
 try:
@@ -713,13 +713,14 @@ for idx, (tick, name) in enumerate(names.items()):
         chg_daily = ((c_p - open_p) / open_p) * 100
         is_green = chg_daily >= 0
         
-        # --- חישובי בסיס של הגיבוי הטוב שלך ---
         df_today['Vol_SMA'] = df_today['Volume'].rolling(10).mean()
         df_today['Mom_5m'] = df_today['Close'].diff(1)
         df_today['Mom_15m'] = df_today['Close'].diff(3)
         df_today['Trend_Score'] = np.sign(df_today['Mom_5m']) + np.sign(df_today['Mom_15m'])
+        df_today['EMA9'] = df_today['Close'].ewm(span=9, adjust=False).mean()
+        df_today['EMA21'] = df_today['Close'].ewm(span=21, adjust=False).mean()
         
-        # --- חישובי VWAP עבור 30 הדקות הראשונות בלבד ---
+        # חישובי VWAP עבור הבוקר
         df_today['Typical_Price'] = (df_today['High'] + df_today['Low'] + df_today['Close']) / 3
         df_today['Cum_Vol'] = df_today['Volume'].cumsum()
         df_today['Cum_Vol_Price'] = (df_today['Typical_Price'] * df_today['Volume']).cumsum()
@@ -735,7 +736,7 @@ for idx, (tick, name) in enumerate(names.items()):
         current_state = 0 
         prep_state = 0 
         
-        # לולאת המנוע המפוצל (Hybrid Two-Stage)
+        # לולאת המנוע התלת-שלבי (Three-Stage Engine)
         for i in range(1, len(df_today)):
             price = df_today['Close'].iloc[i]
             low = df_today['Low'].iloc[i]
@@ -744,54 +745,62 @@ for idx, (tick, name) in enumerate(names.items()):
             vol = df_today['Volume'].iloc[i]
             vol_sma = df_today['Vol_SMA'].iloc[i]
             score = df_today['Trend_Score'].iloc[i]
+            e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
+            v_prev1 = df_today['Volume'].iloc[i-1] if i > 0 else 0
             
-            is_morning = i <= 6 # עד הדקה ה-35 (7 נרות ראשונים)
+            is_morning = i <= 6       # 35 דקות ראשונות (VWAP)
+            is_power_hour = i >= 66   # 60 דקות אחרונות (אזור 15:00 עד 16:00 EST)
             
             if is_morning:
-                # ==================================================
-                # מנוע בוקר (לכידת V-Shape עם VWAP Bands)
-                # ==================================================
+                # --------------------------------------------------
+                # שלב 1: מנוע בוקר (לכידת V-Shape עם VWAP Bands)
+                # --------------------------------------------------
                 vwap_lower = df_today['VWAP_Lower2'].iloc[i]
                 vwap_upper = df_today['VWAP_Upper2'].iloc[i]
                 
-                is_accum_vwap = (low <= vwap_lower)
-                is_dist_vwap = (high >= vwap_upper)
-                
-                if current_state != 1 and prep_state != 1 and is_accum_vwap:
+                if current_state != 1 and prep_state != 1 and (low <= vwap_lower):
                     signals.append((df_today.index[i], "prep_long", low))
                     prep_state = 1
-                elif prep_state == 1 and price > open_c: # נר ירוק עולה = אישור
+                elif prep_state == 1 and price > open_c: 
                     signals.append((df_today.index[i], "long", low))
                     current_state = 1
                     prep_state = 0
                     
-                if current_state != -1 and prep_state != -1 and is_dist_vwap:
+                if current_state != -1 and prep_state != -1 and (high >= vwap_upper):
                     signals.append((df_today.index[i], "prep_short", high))
                     prep_state = -1
-                elif prep_state == -1 and price < open_c: # נר אדום יורד = אישור
+                elif prep_state == -1 and price < open_c: 
                     signals.append((df_today.index[i], "short", high))
                     current_state = -1
                     prep_state = 0
                     
             else:
-                # ==================================================
-                # מנוע יום (הגיבוי המושלם שלך: מומנטום + אזור ערך)
-                # ==================================================
-                is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
-                is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
+                # --------------------------------------------------
+                # שלב 2 + 3: מנוע צהריים (רגוע) או מנוע סגירה (אלים)
+                # --------------------------------------------------
+                if is_power_hour:
+                    # שעת הכוח: דורש קפיצת נפח קיצונית (פי 1.5 מהנר הקודם) בגלל MOC
+                    is_accum = (low <= val * 1.003) and (vol > v_prev1 * 1.5)
+                    is_dist = (high >= vah * 0.997) and (vol > v_prev1 * 1.5)
+                else:
+                    # צהריים: דורש חריגת נפח מתונה בלבד מעל הממוצע
+                    is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
+                    is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
                 
+                # --- מסלול לונג ---
                 if current_state != 1 and prep_state != 1 and is_accum:
                     signals.append((df_today.index[i], "prep_long", low))
                     prep_state = 1
-                elif prep_state == 1 and score >= 1:
+                elif prep_state == 1 and score >= 1 and e9 > e21:
                     signals.append((df_today.index[i], "long", low))
                     current_state = 1
                     prep_state = 0
                     
+                # --- מסלול שורט ---
                 if current_state != -1 and prep_state != -1 and is_dist:
                     signals.append((df_today.index[i], "prep_short", high))
                     prep_state = -1
-                elif prep_state == -1 and score <= -1:
+                elif prep_state == -1 and score <= -1 and e9 < e21:
                     signals.append((df_today.index[i], "short", high))
                     current_state = -1
                     prep_state = 0
@@ -807,7 +816,7 @@ for idx, (tick, name) in enumerate(names.items()):
         elif prep_state == -1:
             arrow_class, arrow_char, status = "arrow-prep-short", "⬇", "פיזור (הכן פקודת שורט)"
         else:
-            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "מגמה יציבה"
+            arrow_class, arrow_char, status = "arrow-huge-green" if is_green else "arrow-huge-red", "⬆" if is_green else "⬇", "ממתין להזדמנות"
 
         html_block = f"""
         <div class="macro-white-card">
