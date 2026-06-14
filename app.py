@@ -705,24 +705,25 @@ def create_advanced_candlestick(df, signals, open_price, target_price=None, brok
     
     current_p = df['Close'].iloc[-1]
     
+    # חישובי אחוזים והוספת קווים בולטים לצד ימין
     if target_price:
         pct_to_target = ((target_price - current_p) / current_p) * 100
         sign = "+" if pct_to_target > 0 else ""
         fig.add_hline(y=target_price, line_dash="dash", line_color="#cc0000", line_width=2, 
-                      annotation_text=f"יעד 1 ({sign}{pct_to_target:.2f}%)", 
-                      annotation_position="top right", annotation_font=dict(color="#cc0000", size=12))
+                      annotation_text=f"<b>יעד 1 ({sign}{pct_to_target:.2f}%)</b>", 
+                      annotation_position="top right", annotation_font=dict(color="#cc0000", size=18))
     
     if target2_price:
         pct_to_t2 = ((target2_price - current_p) / current_p) * 100
         sign2 = "+" if pct_to_t2 > 0 else ""
         fig.add_hline(y=target2_price, line_dash="dash", line_color="#800080", line_width=2, 
-                      annotation_text=f"יעד 2 קיצון ({sign2}{pct_to_t2:.2f}%)", 
-                      annotation_position="top right", annotation_font=dict(color="#800080", size=12))
+                      annotation_text=f"<b>יעד 2 קיצון ({sign2}{pct_to_t2:.2f}%)</b>", 
+                      annotation_position="top right", annotation_font=dict(color="#800080", size=18))
                       
     if broken_level:
         fig.add_hline(y=broken_level, line_dash="dash", line_color="#00cc00", line_width=2, 
-                      annotation_text="תמיכה נפרצה", 
-                      annotation_position="bottom right", annotation_font=dict(color="#00cc00", size=12))
+                      annotation_text="<b>תמיכה נפרצה</b>", 
+                      annotation_position="bottom right", annotation_font=dict(color="#00cc00", size=18))
     
     for sig_time, sig_type, sig_price in signals:
         if sig_type == "prep_short": sym, c, offset = "▼", "#ff9900", 1.002
@@ -767,7 +768,10 @@ macro_cols = st.columns(3)
 
 for idx, (tick, name) in enumerate(names.items()):
     try:
-        df_5m = macro_5m[[f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']].dropna()
+        cols_macro = [f'Open_{tick}', f'High_{tick}', f'Low_{tick}', f'Close_{tick}', f'Volume_{tick}']
+        if not all(c in macro_5m.columns for c in cols_macro): continue
+        
+        df_5m = macro_5m[cols_macro].dropna()
         df_5m.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         if len(df_5m) < 10: raise Exception
         
@@ -847,15 +851,11 @@ long_candidates, short_candidates = [], []
 for sec_name, data in lev_pairs.items():
     try:
         base_tick = data['base']
-        if f'Close_{base_tick}' not in intra_data.columns: continue
+        cols_base = [f'Open_{base_tick}', f'High_{base_tick}', f'Low_{base_tick}', f'Close_{base_tick}', f'Volume_{base_tick}']
+        if not all(c in intra_data.columns for c in cols_base): continue
         
-        df_base = pd.DataFrame({
-            'Open': intra_data[f'Open_{base_tick}'].dropna(),
-            'High': intra_data[f'High_{base_tick}'].dropna(),
-            'Low': intra_data[f'Low_{base_tick}'].dropna(),
-            'Close': intra_data[f'Close_{base_tick}'].dropna(),
-            'Volume': intra_data[f'Volume_{base_tick}'].dropna()
-        })
+        df_base = intra_data[cols_base].dropna()
+        df_base.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         
         if len(df_base) < 10: continue
         
@@ -876,36 +876,39 @@ for sec_name, data in lev_pairs.items():
         
         signals, current_state, prep_state = run_3_phase_engine(df_today, vah, val)
         
+        # חישוב עובי תעלת הנזילות המינימלית (VAH - VAL) כדי למנוע יעדים חופפים
+        va_height = max(vah - val, base_c * 0.005) 
+        
         # --- לונג ממונף ---
         if current_state == 1 or prep_state == 1:
             if base_c < vah: 
                 base_target_price = vah
-                base_target2_price = vah + (vah - poc)
+                base_target2_price = vah + va_height
                 broken_level = None
             else: 
-                base_target_price = vah + (vah - poc)
-                base_target2_price = vah + ((vah - poc) * 2)
+                base_target_price = vah + va_height
+                base_target2_price = vah + (va_height * 2)
                 broken_level = vah
                 
             dist_pct = ((base_target_price - base_c) / base_c) * 100
             dist2_pct = ((base_target2_price - base_c) / base_c) * 100
             
             long_tick = data['long']
-            lev_c = float(intra_data[f'Close_{long_tick}'].dropna().iloc[-1])
-            lev_open = float(intra_data[f'Open_{long_tick}'].dropna().iloc[0])
+            cols_lev = [f'Open_{long_tick}', f'High_{long_tick}', f'Low_{long_tick}', f'Close_{long_tick}']
+            if not all(c in intra_data.columns for c in cols_lev): continue
             
-            # בניית גרף התעודה הממונפת עצמה
-            df_lev = pd.DataFrame({
-                'Open': intra_data[f'Open_{long_tick}'].dropna(),
-                'High': intra_data[f'High_{long_tick}'].dropna(),
-                'Low': intra_data[f'Low_{long_tick}'].dropna(),
-                'Close': intra_data[f'Close_{long_tick}'].dropna()
-            })
+            df_lev = intra_data[cols_lev].dropna()
+            df_lev.columns = ['Open', 'High', 'Low', 'Close']
             df_lev_today = df_lev[df_lev.index.date == last_day].copy() if not df_lev.empty else df_lev
+            
+            if df_lev_today.empty: continue
+            
+            lev_c = float(df_lev_today['Close'].iloc[-1])
+            lev_open = float(df_lev_today['Open'].iloc[0])
             
             lev_target = lev_c * (1 + (dist_pct/100 * data['lev']))
             lev_target2 = lev_c * (1 + (dist2_pct/100 * data['lev']))
-            lev_broken = lev_c * (1 - (0.01 * data['lev'])) if broken_level else None
+            lev_broken = lev_c * (1 + (((broken_level - base_c) / base_c) * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
             
             long_candidates.append({
@@ -924,38 +927,36 @@ for sec_name, data in lev_pairs.items():
             
         # --- שורט ממונף (סוחרים בו כלונג!) ---
         elif current_state == -1 or prep_state == -1:
-            # נכס הבסיס יורד = תעודת השורט עולה! לכן היעדים בתעודה עצמה נמצאים *למעלה*
             if base_c > val: 
                 base_target_price = val
-                base_target2_price = val - (poc - val)
+                base_target2_price = val - va_height
                 broken_level = None
             else:
-                base_target_price = val - (poc - val)
-                base_target2_price = val - ((poc - val) * 2)
+                base_target_price = val - va_height
+                base_target2_price = val - (va_height * 2)
                 broken_level = val
                 
-            dist_pct = ((base_c - base_target_price) / base_c) * 100 # אחוז ירידה של נכס הבסיס
+            dist_pct = ((base_c - base_target_price) / base_c) * 100 
             dist2_pct = ((base_c - base_target2_price) / base_c) * 100
             
             short_tick = data['short']
-            lev_c = float(intra_data[f'Close_{short_tick}'].dropna().iloc[-1])
-            lev_open = float(intra_data[f'Open_{short_tick}'].dropna().iloc[0])
+            cols_short = [f'Open_{short_tick}', f'High_{short_tick}', f'Low_{short_tick}', f'Close_{short_tick}']
+            if not all(c in intra_data.columns for c in cols_short): continue
             
-            df_lev = pd.DataFrame({
-                'Open': intra_data[f'Open_{short_tick}'].dropna(),
-                'High': intra_data[f'High_{short_tick}'].dropna(),
-                'Low': intra_data[f'Low_{short_tick}'].dropna(),
-                'Close': intra_data[f'Close_{short_tick}'].dropna()
-            })
+            df_lev = intra_data[cols_short].dropna()
+            df_lev.columns = ['Open', 'High', 'Low', 'Close']
             df_lev_today = df_lev[df_lev.index.date == last_day].copy() if not df_lev.empty else df_lev
             
-            # אנחנו מוסיפים את הרווח למעלה, כי קנינו שורט
+            if df_lev_today.empty: continue
+            
+            lev_c = float(df_lev_today['Close'].iloc[-1])
+            lev_open = float(df_lev_today['Open'].iloc[0])
+            
             lev_target = lev_c * (1 + (dist_pct/100 * data['lev']))
             lev_target2 = lev_c * (1 + (dist2_pct/100 * data['lev']))
-            lev_broken = lev_c * (1 - (0.01 * data['lev'])) if broken_level else None
+            lev_broken = lev_c * (1 + (((base_c - broken_level) / base_c) * data['lev'])) if broken_level else None
             lev_pct = dist_pct * data['lev']
             
-            # שינוי ויזואלי של האיתותים כך שיתאימו לגרף של קנייה עולה
             adjusted_signals = []
             for sig_t, sig_type, sig_p in signals:
                 lev_sig_price = df_lev_today['Close'].loc[sig_t] if sig_t in df_lev_today.index else lev_c
