@@ -746,7 +746,6 @@ for idx, (tick, name) in enumerate(names.items()):
             score = df_today['Trend_Score'].iloc[i]
             
             is_morning = i <= 6 # עד הדקה ה-35 (7 נרות ראשונים)
-            is_power_hour = i >= 66 # 60 הדקות האחרונות של היום (MOC)
             
             if is_morning:
                 # ==================================================
@@ -777,14 +776,9 @@ for idx, (tick, name) in enumerate(names.items()):
             else:
                 # ==================================================
                 # מנוע יום (הגיבוי המושלם שלך: מומנטום + אזור ערך)
-                # כולל סלקציה והחמרת נפח ל-60 הדקות האחרונות
                 # ==================================================
-                if is_power_hour:
-                    is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.5)
-                    is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.5)
-                else:
-                    is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
-                    is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
+                is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
+                is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
                 
                 if current_state != 1 and prep_state != 1 and is_accum:
                     signals.append((df_today.index[i], "prep_long", low))
