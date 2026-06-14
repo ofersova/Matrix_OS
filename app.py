@@ -746,14 +746,14 @@ for idx, (tick, name) in enumerate(names.items()):
             vol_sma = df_today['Vol_SMA'].iloc[i]
             score = df_today['Trend_Score'].iloc[i]
             e9, e21 = df_today['EMA9'].iloc[i], df_today['EMA21'].iloc[i]
-            v_prev1 = df_today['Volume'].iloc[i-1] if i > 0 else 0
             
-            is_morning = i <= 6       # 35 דקות ראשונות (VWAP)
-            is_power_hour = i >= 66   # 60 דקות אחרונות (אזור 15:00 עד 16:00 EST)
+            is_morning = i <= 6       # שלב 1: עד הדקה ה-35
+            is_midday = 6 < i < 66    # שלב 2: שעות הצהריים הרגועות
+            is_power_hour = i >= 66   # שלב 3: שעת הכוח של סוף המסחר
             
             if is_morning:
                 # --------------------------------------------------
-                # שלב 1: מנוע בוקר (לכידת V-Shape עם VWAP Bands)
+                # שלב 1: מנוע בוקר (לכידת V-Shape עם VWAP Bands) - ללא שינוי
                 # --------------------------------------------------
                 vwap_lower = df_today['VWAP_Lower2'].iloc[i]
                 vwap_upper = df_today['VWAP_Upper2'].iloc[i]
@@ -774,20 +774,13 @@ for idx, (tick, name) in enumerate(names.items()):
                     current_state = -1
                     prep_state = 0
                     
-            else:
+            elif is_midday:
                 # --------------------------------------------------
-                # שלב 2 + 3: מנוע צהריים (רגוע) או מנוע סגירה (אלים)
+                # שלב 2: מנוע יום (הגיבוי המושלם שלך: מומנטום + אזור ערך) - ללא שינוי
                 # --------------------------------------------------
-                if is_power_hour:
-                    # שעת הכוח: דורש קפיצת נפח קיצונית (פי 1.5 מהנר הקודם) בגלל MOC
-                    is_accum = (low <= val * 1.003) and (vol > v_prev1 * 1.5)
-                    is_dist = (high >= vah * 0.997) and (vol > v_prev1 * 1.5)
-                else:
-                    # צהריים: דורש חריגת נפח מתונה בלבד מעל הממוצע
-                    is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
-                    is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
+                is_accum = (low <= val * 1.002) and (vol > vol_sma * 1.1)
+                is_dist = (high >= vah * 0.998) and (vol > vol_sma * 1.1)
                 
-                # --- מסלול לונג ---
                 if current_state != 1 and prep_state != 1 and is_accum:
                     signals.append((df_today.index[i], "prep_long", low))
                     prep_state = 1
@@ -796,8 +789,30 @@ for idx, (tick, name) in enumerate(names.items()):
                     current_state = 1
                     prep_state = 0
                     
-                # --- מסלול שורט ---
                 if current_state != -1 and prep_state != -1 and is_dist:
+                    signals.append((df_today.index[i], "prep_short", high))
+                    prep_state = -1
+                elif prep_state == -1 and score <= -1 and e9 < e21:
+                    signals.append((df_today.index[i], "short", high))
+                    current_state = -1
+                    prep_state = 0
+
+            elif is_power_hour:
+                # --------------------------------------------------
+                # שלב 3: שעת הכוח (דרישות נפח קיצוניות מותאמות לסגירה)
+                # --------------------------------------------------
+                is_accum_eod = (low <= val * 1.003) and (vol > vol_sma * 1.5)
+                is_dist_eod = (high >= vah * 0.997) and (vol > vol_sma * 1.5)
+                
+                if current_state != 1 and prep_state != 1 and is_accum_eod:
+                    signals.append((df_today.index[i], "prep_long", low))
+                    prep_state = 1
+                elif prep_state == 1 and score >= 1 and e9 > e21:
+                    signals.append((df_today.index[i], "long", low))
+                    current_state = 1
+                    prep_state = 0
+                    
+                if current_state != -1 and prep_state != -1 and is_dist_eod:
                     signals.append((df_today.index[i], "prep_short", high))
                     prep_state = -1
                 elif prep_state == -1 and score <= -1 and e9 < e21:
